@@ -1,7 +1,7 @@
 version: '3'
 
-env:
-  GOPATH: '{{.HOME}}/go'
+# env:
+#   GOPATH: '{{.HOME}}/go'
 
 tasks:
 
