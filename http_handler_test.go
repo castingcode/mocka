@@ -104,10 +104,11 @@ func TestHandleMocaRequest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+			f, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer f.Close()
 			lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
 			handler := NewMocaRequestHandler(lookup)
 
