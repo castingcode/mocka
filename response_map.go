@@ -54,6 +54,7 @@ func NewResponseLookup(opts ...ResponseLookupOption) (*ResponseLookup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not read responses.yml %w", err)
 	}
+
 	var responseMap ResponseMap
 	err = yaml.Unmarshal(responseMapFile, &responseMap)
 	if err != nil {

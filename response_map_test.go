@@ -12,6 +12,9 @@ import (
 func TestGetResponse(t *testing.T) {
 	Convey("Given I have ResponseLookup", t, func() {
 		responseDirectory := t.TempDir()
+		defer func() {
+			fmt.Println("closing")
+		}()
 		Convey("When the files do not exist", func() {
 			lookup, err := NewResponseLookup(WithDataFolder(responseDirectory))
 			Convey("Then an error should be returned", func() {
@@ -21,14 +24,16 @@ func TestGetResponse(t *testing.T) {
 		})
 
 		Convey("When the files are empty", func() {
-			_, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
+			f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+			f.Close()
+			uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer uf.Close()
 			lookup, err := NewResponseLookup(WithDataFolder(responseDirectory))
 			Convey("Then no error should be returned", func() {
 				So(err, ShouldBeNil)
@@ -52,10 +57,11 @@ func TestGetResponse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+			f, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer f.Close()
 			lookup, err := NewResponseLookup(WithDataFolder(responseDirectory))
 			Convey("Then no error should be returned when creating the lookup", func() {
 				So(err, ShouldBeNil)
