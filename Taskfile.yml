@@ -10,7 +10,7 @@ tasks:
     cmds:
       - $ go install github.com/smartystreets/goconvey
 
-  test: 
+  test:
     desc: Run tests with story output
     cmds:
       - go test -v ./...
@@ -20,7 +20,7 @@ tasks:
     cmds:
       - go test -v ./... -covermode=atomic -coverprofile=coverage.out
 
-  test-cover-report:    
+  test-cover-report:
     desc: Run tests with coverage report
     cmds:
       - go test -v ./... -covermode=atomic -coverprofile=coverage.out
