@@ -1,0 +1,109 @@
+package mocka
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+const (
+	StatusOK             = 0
+	StatusSrvNoDataFound = 510
+	StatusDBNoDataFound  = -1403
+)
+
+type Response struct {
+	StatusCode int    `yaml:"status"`
+	Message    string `yaml:"message,omitempty"`
+	ResultSet  string `yaml:"results,omitempty"`
+}
+
+// contains repsones for all users
+type ResponseMap map[string]Response
+
+// contains user-specific responses
+type UserResponseMap map[string]ResponseMap
+
+type ResponseLookup struct {
+	userResponses    UserResponseMap
+	allUserResponses ResponseMap
+	dataFolder       string
+}
+
+var ErrrNoMatchFound = errors.New("no match found")
+
+type ResponseLookupOption func(*ResponseLookup)
+
+func WithDataFolder(folder string) ResponseLookupOption {
+	return func(r *ResponseLookup) {
+		r.dataFolder = folder
+	}
+}
+
+func NewResponseLookup(opts ...ResponseLookupOption) (*ResponseLookup, error) {
+	responseLookup := &ResponseLookup{
+		dataFolder: "responses",
+	}
+	for _, opt := range opts {
+		opt(responseLookup)
+	}
+	responseMapFile, err := os.ReadFile(fmt.Sprintf("%s/responses.yml", responseLookup.dataFolder))
+	if err != nil {
+		return nil, fmt.Errorf("could not read responses.yml %w", err)
+	}
+	var responseMap ResponseMap
+	err = yaml.Unmarshal(responseMapFile, &responseMap)
+	if err != nil {
+		return nil, fmt.Errorf("could parse responses.yml %w", err)
+	}
+
+	userResponseMapFile, err := os.ReadFile(fmt.Sprintf("%s/user_responses.yml", responseLookup.dataFolder))
+	if err != nil {
+		return nil, fmt.Errorf("could not read user responses.yml %w", err)
+	}
+	var userResponseMap UserResponseMap
+	err = yaml.Unmarshal(userResponseMapFile, &userResponseMap)
+	if err != nil {
+		return nil, fmt.Errorf("could parse user responses.yml %w", err)
+	}
+	responseLookup.allUserResponses = responseMap
+	responseLookup.userResponses = userResponseMap
+
+	return responseLookup, nil
+}
+
+// GetResponse handles getting a lookup first by exact match first, then
+// gets rid of the where clause and searches just on the command name.
+// It does not handle groovy or SQL, just local syntax.
+func (r ResponseLookup) GetResponse(user, query string) Response {
+	response, err := r.getResponse(user, query)
+	if err == nil {
+		return response
+	}
+	parts := strings.SplitAfterN(query, " where ", 2) // TODO: Make this regex to not get tripped up by whitespace
+	response, err = r.getResponse(user, parts[0])
+	if err == nil {
+		return response
+	}
+	return Response{
+		StatusCode: StatusSrvNoDataFound,
+		Message:    "",
+	}
+}
+
+// getResponse handles the lookup for a user specific version first and a global
+// version next.  It only handles exact matches on syntax of the request.
+func (r ResponseLookup) getResponse(user, query string) (Response, error) {
+	if m, ok := r.userResponses[user]; ok {
+		if response, ok := m[query]; ok {
+			return response, nil
+		}
+	}
+	if response, ok := r.allUserResponses[query]; ok {
+		return response, nil
+	}
+	return Response{}, ErrrNoMatchFound
+}

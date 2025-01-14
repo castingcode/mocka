@@ -1,0 +1,23 @@
+publish data:
+  status: 0
+  results: >
+    <?xml version="1.0" encoding="UTF-8"?>
+    <moca-response>
+      <session-id></session-id>
+      <status>0</status>
+      <moca-results>
+        <metadata>
+            <column name="line" type="I" length="0" nullable="true"/>
+            <column name="text" type="S" length="0" nullable="true"/>
+        </metadata>
+        <data>
+            <row>
+                <field>0</field>
+                <field>hello</field>
+            </row>
+        </data>
+      </moca-results>
+    </moca-response>
+list warehouses:
+  status: 510
+  message: No Data Found

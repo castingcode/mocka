@@ -1,0 +1,34 @@
+version: '3'
+
+env:
+  GOPATH: '{{.HOME}}/go'
+
+tasks:
+
+  install-deps:
+    desc: Install dependencies
+    cmds:
+      - $ go install github.com/smartystreets/goconvey
+
+  test: 
+    desc: Run tests with story output
+    cmds:
+      - go test -v ./...
+
+  test-cover:
+    desc: Run tests with coverage
+    cmds:
+      - go test -v ./... -covermode=atomic -coverprofile=coverage.out
+
+  test-cover-report:    
+    desc: Run tests with coverage report
+    cmds:
+      - go test -v ./... -covermode=atomic -coverprofile=coverage.out
+      - go tool cover -html=coverage.out -o coverage.html
+
+  convey:
+    desc: Run tests with goconvey UI
+    deps:
+      - install-depsinstall-deps
+    cmds:
+      - $GOPATH/bin/goconvey
