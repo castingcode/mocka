@@ -1,8 +1,8 @@
 # A mock MOCA server.
 
-[![Tests](https://github.com/castingcode/mocaprotocol/actions/workflows/ci-test.yml/badge.svg)](https://github.com/castingcode/mocaprotocol/actions/workflows/ci-test.yml)
-[![codecov](https://codecov.io/gh/castingcode/mocaprotocol/graph/badge.svg?token=C7EUFCEHED)](https://codecov.io/gh/castingcode/mocaprotocol)
-[![Go Report Card](https://goreportcard.com/badge/github.com/castingcode/mocaprotocol)](https://goreportcard.com/report/github.com/castingcode/mocaprotocol)
+[![Tests](https://github.com/castingcode/mocka/actions/workflows/ci-test.yml/badge.svg)](https://github.com/castingcode/mocka/actions/workflows/ci-test.yml)
+[![codecov](https://codecov.io/gh/castingcode/mocka/graph/badge.svg?token=C7EUFCEHED)](https://codecov.io/gh/castingcode/mocka)
+[![Go Report Card](https://goreportcard.com/badge/github.com/castingcode/mocka)](https://goreportcard.com/report/github.com/castingcode/mocka)
 
 
 ## Summary
