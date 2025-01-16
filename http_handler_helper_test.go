@@ -13,8 +13,7 @@ type TestRequestOption func(*mocaprotocol.MocaRequest)
 
 func WithSessionKey(key string) TestRequestOption {
 	return func(r *mocaprotocol.MocaRequest) {
-		// TODO: Set the session key
-		r.Environment.Vars = append(r.Environment.Vars, mocaprotocol.Var{})
+		r.Environment.Vars = append(r.Environment.Vars, mocaprotocol.Var{Name: "SESSION_KEY", Value: key})
 	}
 }
 

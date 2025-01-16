@@ -16,6 +16,36 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
+func TestHandleMocaRequest_Ping(t *testing.T) {
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := t.TempDir()
+		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
+		handler := NewMocaRequestHandler(lookup)
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to login with a valid user name and password", func() {
+
+			req := buildRequest(t, "ping")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key and lifetime?", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 0)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
 func TestHandleMocaRequest_Login(t *testing.T) {
 
 	Convey("Given I have a MocaRequestHandler", t, func() {
@@ -57,24 +87,25 @@ func TestHandleMocaRequest_Login(t *testing.T) {
 	})
 }
 
-func TestHandleMocaRequest_Ping(t *testing.T) {
+func TestHandleMocaRequest_Logout(t *testing.T) {
 
 	Convey("Given I have a MocaRequestHandler", t, func() {
-
+		sessionKey := uuid.NewString()
 		responseDirectory := t.TempDir()
 		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
 		gin.SetMode(gin.TestMode)
 		router := gin.New()
 		RegisterRoutes(router, handler)
 
-		Convey("When I attempt to login with a valid user name and password", func() {
+		Convey("When I attempt to logout with a valid session key", func() {
 
-			req := buildRequest(t, "ping")
+			req := buildRequest(t, "logout user", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
-			Convey("Then the response should be OK with a session key and lifetime?", func() {
+			Convey("Then the response should be OK with a session key", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
 				var response mocaprotocol.MocaResponse
 				err := xml.Unmarshal(w.Body.Bytes(), &response)
@@ -82,6 +113,25 @@ func TestHandleMocaRequest_Ping(t *testing.T) {
 				So(response.Status, ShouldEqual, 0)
 				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
 				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+				So(handler.sessions, ShouldBeEmpty)
+			})
+		})
+
+		Convey("When I attempt to logout with an invalid session key", func() {
+
+			req := buildRequest(t, "logout user", WithSessionKey(uuid.NewString()))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 523)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+				So(response.Message, ShouldEqual, "Invalid session key")
 			})
 		})
 	})

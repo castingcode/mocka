@@ -2,7 +2,6 @@ package mocka
 
 import (
 	"encoding/xml"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -23,6 +22,7 @@ func RegisterRoutes(router gin.IRoutes, handler MocaRequestHandlerInterface) {
 
 /*
  <var name="SESSION_KEY" value=";uid=CYCLEUSER07|sid=5498bc9a-6a70-4720-8615-45166567db93|dt= |sec=ALL;igzFGgb9UdWfaR4dHEjKOUaMW2" />
+ 523 Invalid session key
 */
 
 type MocaRequestHandler struct {
@@ -73,13 +73,28 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 			}
 			userID := params["usr_id"]
 			password := params["usr_pswd"]
-			fmt.Println(password)
+
+			// any password is fine for now
+			if password == "" {
+				c.Data(http.StatusOK, "application/xml-moca", []byte(`<?xml version="1.0" encoding="UTF-8"?><moca-response><status>523</status><message>Invalid session key</message></moca-response>`))
+				return
+			}
+
 			response, sessionKey := generateLoginResponse(userID)
-			h.sessions[sessionKey] = "super"
+			h.sessions[sessionKey] = userID
 			c.Data(http.StatusOK, "application/xml-moca", response)
 			return
 		}
-		// handle logout user
+		if tokens[0] == "logout user" {
+			sessionKey, invalidKey := h.GetSessionKey(request)
+			if invalidKey != nil {
+				c.Data(http.StatusOK, "application/xml-moca", invalidKey)
+				return
+			}
+			delete(h.sessions, sessionKey)
+			c.Data(http.StatusOK, "application/xml-moca", generatePingResponse())
+			return
+		}
 		// handle options to run with and without where clause
 	}
 
@@ -93,8 +108,23 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 	// if session key, get the response from the lookup table by full command; else by simple noun/verb
 
 	c.Data(http.StatusOK, "application/xml-moca", []byte(response.ResultSet))
+}
 
-	// c.JSON(http.StatusOK, []byte(response.ResultSet))
+// returns either the session key or an error response
+func (h *MocaRequestHandler) GetSessionKey(request mocaprotocol.MocaRequest) (string, []byte) {
+	for _, v := range request.Environment.Vars {
+		if v.Name == "SESSION_KEY" {
+			if _, ok := h.sessions[v.Value]; ok {
+				return v.Value, nil
+			}
+		}
+	}
+	response := mocaprotocol.MocaResponse{
+		Status:  523,
+		Message: "Invalid session key",
+	}
+	body, _ := xml.Marshal(response)
+	return "", append(XMLDeclaration, body...)
 }
 
 func generatePingResponse() []byte {
