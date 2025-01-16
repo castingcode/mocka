@@ -1,6 +1,7 @@
 package mocka
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -84,6 +85,24 @@ func TestHandleMocaRequest_Login(t *testing.T) {
 
 			})
 		})
+
+		Convey("When I attempt to login with a valid user name and no password", func() {
+
+			req := buildRequest(t, "login user where usr_id = 'anyuser'")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 802)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+				So(response.Message, ShouldEqual, "Missing argument: Password (usr_pswd)")
+			})
+		})
 	})
 }
 
@@ -132,6 +151,42 @@ func TestHandleMocaRequest_Logout(t *testing.T) {
 				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
 				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
 				So(response.Message, ShouldEqual, "Invalid session key")
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_NoContentType(t *testing.T) {
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+		lookup, _ := NewResponseLookup()
+		handler := NewMocaRequestHandler(lookup)
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to send a command with no content type header", func() {
+
+			request := &mocaprotocol.MocaRequest{
+				Autocommit: "true",
+				Query:      mocaprotocol.Query{Text: "ping"},
+			}
+			requestBody, err := xml.Marshal(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, err := http.NewRequest("POST", "/service", bytes.NewReader(requestBody))
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be an html error page", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				So(w.Body.String(), ShouldStartWith, "<html>")
+				So(w.Header().Get("Content-Type"), ShouldEqual, "text/html; charset=utf-8")
 			})
 		})
 	})

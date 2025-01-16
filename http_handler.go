@@ -39,7 +39,7 @@ func NewMocaRequestHandler(lookup *ResponseLookup) *MocaRequestHandler {
 
 func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 	if c.GetHeader("Content-Type") != "application/xml-moca" {
-		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "Content-Type must be application/xml-moca"})
+		c.Data(http.StatusOK, "text/html; charset=utf-8", generateNoContentResponse())
 		return
 	}
 	var request mocaprotocol.MocaRequest
@@ -76,7 +76,7 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 
 			// any password is fine for now
 			if password == "" {
-				c.Data(http.StatusOK, "application/xml-moca", []byte(`<?xml version="1.0" encoding="UTF-8"?><moca-response><status>523</status><message>Invalid session key</message></moca-response>`))
+				c.Data(http.StatusOK, "application/xml-moca", generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
 				return
 			}
 
@@ -138,6 +138,18 @@ func generatePingResponse() []byte {
 	return append(XMLDeclaration, body...)
 }
 
+func generateErrorResponse(status int, message string) []byte {
+	response := mocaprotocol.MocaResponse{
+		Status:  status,
+		Message: message,
+	}
+	body, err := xml.Marshal(response)
+	if err != nil {
+		return nil
+	}
+	return append(XMLDeclaration, body...)
+}
+
 func generateLoginResponse(userID string) ([]byte, string) {
 	// we'll just use a simple UUID for the session key for now.
 	// if need be in the future, we'll more accurately mock this
@@ -189,4 +201,22 @@ func generateLoginResponse(userID string) ([]byte, string) {
 		return nil, sessionKey
 	}
 	return append(XMLDeclaration, body...), sessionKey
+}
+
+func generateNoContentResponse() []byte {
+	content := `<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+<title>Error 500 java.lang.NullPointerException</title>
+</head>
+<body><h2>HTTP ERROR 500 java.lang.NullPointerException</h2>
+<table>
+<tr><th>URI:</th><td>/service</td></tr>
+<tr><th>STATUS:</th><td>500</td></tr>
+<tr><th>MESSAGE:</th><td>java.lang.NullPointerException</td></tr>
+</table>
+
+</body>
+</html>`
+	return []byte(content)
 }
