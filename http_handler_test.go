@@ -192,44 +192,178 @@ func TestHandleMocaRequest_NoContentType(t *testing.T) {
 	})
 }
 
-func TestHandleMocaRequest(t *testing.T) {
-	// Given I have a MocaRequestHandler
-	// When I call HandleMocaRequest
-	// Then the response should be OK
+func TestHandleMocaRequest_NotAuthenticated(t *testing.T) {
+
+	sessionKey := uuid.NewString()
+
 	Convey("Given I have a MocaRequestHandler", t, func() {
 
 		responseDirectory := t.TempDir()
+		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer uf.Close()
+		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
 
-		Convey("When the command is mapped for all users", func() {
-			data, err := os.ReadFile("testdata/responses.yml")
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = os.WriteFile(fmt.Sprintf("%s/responses.yml", responseDirectory), []byte(data), 0644)
-			if err != nil {
-				t.Fatal(err)
-			}
-			f, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer f.Close()
-			lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
-			handler := NewMocaRequestHandler(lookup)
+		Convey("When I attempt to run a moca command without a session key", func() {
 
-			gin.SetMode(gin.TestMode)
-			router := gin.New()
-			RegisterRoutes(router, handler)
-
+			req := buildRequest(t, "list shipments")
 			w := httptest.NewRecorder()
-			req, _ := http.NewRequest("GET", "/service", nil)
 			router.ServeHTTP(w, req)
 
-			fmt.Println(w.Body.String())
-			fmt.Println(w.Code)
-
+			Convey("Then the response should be invalid sessin key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusInvalidSessionKey)
+				So(response.Message, ShouldEqual, "Invalid session key")
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
 		})
-
 	})
+}
 
+func TestHandleMocaRequest_InvalidSQL(t *testing.T) {
+
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := t.TempDir()
+		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer uf.Close()
+		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to an unexpected SQL Statement", func() {
+
+			req := buildRequest(t, "[select * from notable]", WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be StatusDBError", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusDBError)
+				So(response.Message, ShouldEqual, "Database Error: 511 - Invalid object name")
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_InvalidGroovy(t *testing.T) {
+
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := t.TempDir()
+		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer uf.Close()
+		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to an unexpected Groovy Statement", func() {
+
+			req := buildRequest(t, "[[com.example.NoObject.doNothing()]]", WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be StatusGroovyException", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusGroovyException)
+				So(response.Message, ShouldEqual, "Groovy Script Exception: java.lang.NullPointerException")
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_InvalidLocalSyntax(t *testing.T) {
+
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := t.TempDir()
+		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer uf.Close()
+		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to an unexpected Local Syntax", func() {
+
+			req := buildRequest(t, "list players", WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be StatusCommandNotFound", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusCommandNotFound)
+				So(response.Message, ShouldEqual, "Command (list players) not found")
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
 }

@@ -2,6 +2,7 @@ package mocka
 
 import (
 	"encoding/xml"
+	"log"
 	"net/http"
 	"strings"
 
@@ -38,7 +39,7 @@ func NewMocaRequestHandler(lookup *ResponseLookup) *MocaRequestHandler {
 }
 
 func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
-	if c.GetHeader("Content-Type") != "application/xml-moca" {
+	if c.GetHeader("Content-Type") != "application/moca-xml" {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", generateNoContentResponse())
 		return
 	}
@@ -55,7 +56,7 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 		query = strings.Join(strings.Fields(query), " ")
 		tokens := strings.SplitN(query, " where ", 2)
 		if tokens[0] == "ping" {
-			c.Data(http.StatusOK, "application/xml-moca", generatePingResponse())
+			c.Data(http.StatusOK, "application/moca-xml", generatePingResponse())
 			return
 		}
 		if tokens[0] == "login user" {
@@ -76,38 +77,51 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 
 			// any password is fine for now
 			if password == "" {
-				c.Data(http.StatusOK, "application/xml-moca", generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
+				c.Data(http.StatusOK, "application/moca-xml", generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
 				return
 			}
 
 			response, sessionKey := generateLoginResponse(userID)
 			h.sessions[sessionKey] = userID
-			c.Data(http.StatusOK, "application/xml-moca", response)
+			c.Data(http.StatusOK, "application/moca-xml", response)
 			return
 		}
 		if tokens[0] == "logout user" {
 			sessionKey, invalidKey := h.GetSessionKey(request)
 			if invalidKey != nil {
-				c.Data(http.StatusOK, "application/xml-moca", invalidKey)
+				c.Data(http.StatusOK, "application/moca-xml", invalidKey)
 				return
 			}
 			delete(h.sessions, sessionKey)
-			c.Data(http.StatusOK, "application/xml-moca", generatePingResponse())
+			c.Data(http.StatusOK, "application/moca-xml", generatePingResponse())
 			return
 		}
 		// handle options to run with and without where clause
 	}
 
 	// now, make sure they have a valid session key
+	_, invalidKey := h.GetSessionKey(request)
+	if invalidKey != nil {
+		c.Data(http.StatusOK, "application/moca-xml", invalidKey)
+		return
+	}
 
-	response := h.lookup.GetResponse("super", "noop")
+	response := h.lookup.GetResponse("super", query)
+	body, err := xml.Marshal(mocaprotocol.MocaResponse{
+		Status:  response.StatusCode,
+		Message: response.Message,
+	})
+	if err != nil {
+		log.Default().Printf("error marshalling response: %v", err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	c.Data(http.StatusOK, "application/moca-xml", append(XMLDeclaration, body...))
 
 	// TODO: Get the session key from the request
 	// if no session key, see if this is a ping or login user command
 	// otherwise, return an error
 	// if session key, get the response from the lookup table by full command; else by simple noun/verb
-
-	c.Data(http.StatusOK, "application/xml-moca", []byte(response.ResultSet))
 }
 
 // returns either the session key or an error response
@@ -120,7 +134,7 @@ func (h *MocaRequestHandler) GetSessionKey(request mocaprotocol.MocaRequest) (st
 		}
 	}
 	response := mocaprotocol.MocaResponse{
-		Status:  523,
+		Status:  StatusInvalidSessionKey,
 		Message: "Invalid session key",
 	}
 	body, _ := xml.Marshal(response)

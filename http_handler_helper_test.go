@@ -34,6 +34,6 @@ func buildRequest(t *testing.T, command string, options ...TestRequestOption) *h
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
-	req.Header.Set("Content-Type", "application/xml-moca")
+	req.Header.Set("Content-Type", "application/moca-xml")
 	return req
 }

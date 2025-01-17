@@ -12,9 +12,6 @@ import (
 func TestGetResponse(t *testing.T) {
 	Convey("Given I have ResponseLookup", t, func() {
 		responseDirectory := t.TempDir()
-		defer func() {
-			fmt.Println("closing")
-		}()
 		Convey("When the files do not exist", func() {
 			lookup, err := NewResponseLookup(WithDataFolder(responseDirectory))
 			Convey("Then an error should be returned", func() {
@@ -41,9 +38,9 @@ func TestGetResponse(t *testing.T) {
 			})
 			Convey("And getting a response for a command should be a moca error", func() {
 				response := lookup.GetResponse("super", "noop")
-				So(response.StatusCode, ShouldEqual, StatusSrvNoDataFound)
+				So(response.StatusCode, ShouldEqual, StatusCommandNotFound)
 				So(response.ResultSet, ShouldBeEmpty)
-				So(response.Message, ShouldEqual, "")
+				So(response.Message, ShouldEqual, "Command (noop) not found")
 			})
 
 		})
