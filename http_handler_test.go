@@ -3,10 +3,8 @@ package mocka
 import (
 	"bytes"
 	"encoding/xml"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"math/rand"
@@ -198,17 +196,7 @@ func TestHandleMocaRequest_NotAuthenticated(t *testing.T) {
 
 	Convey("Given I have a MocaRequestHandler", t, func() {
 
-		responseDirectory := t.TempDir()
-		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer uf.Close()
+		responseDirectory := creteEmptyResponseFiles(t)
 		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions[sessionKey] = "super"
@@ -242,17 +230,7 @@ func TestHandleMocaRequest_InvalidSQL(t *testing.T) {
 
 	Convey("Given I have a MocaRequestHandler", t, func() {
 
-		responseDirectory := t.TempDir()
-		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer uf.Close()
+		responseDirectory := creteEmptyResponseFiles(t)
 		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions[sessionKey] = "super"
@@ -280,23 +258,72 @@ func TestHandleMocaRequest_InvalidSQL(t *testing.T) {
 	})
 }
 
+func TestHandleMocaRequest_ValidSQL(t *testing.T) {
+
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := createResponseFiles(t, "testdata/sql_responses.yml", "")
+		lookup, err := NewResponseLookup(WithDataFolder(responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to a SQL Statement that returns results", func() {
+			sql := `[select 'x' as myval
+			           from dual where 1=1]`
+			req := buildRequest(t, sql, WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusOK)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 1)
+				So(response.MocaResults.Metadata.Columns[0].Name, ShouldEqual, "myval")
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "x")
+			})
+		})
+
+		Convey("When I attempt to a SQL Statement that returns an error", func() {
+			sql := `[select 'x' as myval
+			           from dual where 1=2]`
+			req := buildRequest(t, sql, WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be StatusDBError", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusDBNoDataFound)
+				So(response.Message, ShouldEqual, "No Data Found")
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
 func TestHandleMocaRequest_InvalidGroovy(t *testing.T) {
 
 	sessionKey := uuid.NewString()
 
 	Convey("Given I have a MocaRequestHandler", t, func() {
 
-		responseDirectory := t.TempDir()
-		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer uf.Close()
+		responseDirectory := creteEmptyResponseFiles(t)
 		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions[sessionKey] = "super"
@@ -330,17 +357,7 @@ func TestHandleMocaRequest_InvalidLocalSyntax(t *testing.T) {
 
 	Convey("Given I have a MocaRequestHandler", t, func() {
 
-		responseDirectory := t.TempDir()
-		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer uf.Close()
+		responseDirectory := creteEmptyResponseFiles(t)
 		lookup, _ := NewResponseLookup(WithDataFolder(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions[sessionKey] = "super"

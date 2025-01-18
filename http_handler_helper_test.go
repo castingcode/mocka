@@ -3,7 +3,9 @@ package mocka
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/castingcode/mocaprotocol"
@@ -36,4 +38,68 @@ func buildRequest(t *testing.T, command string, options ...TestRequestOption) *h
 	}
 	req.Header.Set("Content-Type", "application/moca-xml")
 	return req
+}
+
+// creteEmptyResponseFiles creates empty response files in a temporary directory and returns the directory path
+func creteEmptyResponseFiles(t *testing.T) string {
+	t.Helper()
+	responseDirectory := t.TempDir()
+	f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
+	if err != nil {
+		t.Fatal(err)
+		return responseDirectory
+	}
+	f.Close()
+	uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+	if err != nil {
+		t.Fatal(err)
+		return responseDirectory
+	}
+	uf.Close()
+	return responseDirectory
+}
+
+// createResponseFiles creates response files in a temporary directory and returns the directory path
+func createResponseFiles(t *testing.T, responseFilePath, userResponseFilePath string) string {
+	t.Helper()
+	responseDirectory := t.TempDir()
+	if responseFilePath == "" {
+		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+			return responseDirectory
+		}
+		f.Close()
+	} else {
+		data, err := os.ReadFile(responseFilePath)
+		if err != nil {
+			t.Fatal(err)
+			return responseDirectory
+		}
+		err = os.WriteFile(fmt.Sprintf("%s/responses.yml", responseDirectory), []byte(data), 0644)
+		if err != nil {
+			t.Fatal(err)
+			return responseDirectory
+		}
+	}
+	if userResponseFilePath == "" {
+		f, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+			return responseDirectory
+		}
+		f.Close()
+	} else {
+		data, err := os.ReadFile(userResponseFilePath)
+		if err != nil {
+			t.Fatal(err)
+			return responseDirectory
+		}
+		err = os.WriteFile(fmt.Sprintf("%s/user_responses.yml", responseDirectory), []byte(data), 0644)
+		if err != nil {
+			t.Fatal(err)
+			return responseDirectory
+		}
+	}
+	return responseDirectory
 }

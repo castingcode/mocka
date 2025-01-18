@@ -66,11 +66,7 @@ func TestGetResponse(t *testing.T) {
 			})
 			Convey("And the command lookup should return a non-user specific response", func() {
 				response := lookup.GetResponse("super", "publish data")
-				want := `<?xml version="1.0" encoding="UTF-8"?>
-    <moca-response>
-      <session-id></session-id>
-      <status>0</status>
-      <moca-results>
+				want := `<moca-results>
         <metadata>
             <column name="line" type="I" length="0" nullable="true"/>
             <column name="text" type="S" length="0" nullable="true"/>
@@ -81,8 +77,7 @@ func TestGetResponse(t *testing.T) {
                 <field>hello</field>
             </row>
         </data>
-      </moca-results>
-    </moca-response>`
+    </moca-results>`
 				So(response.StatusCode, ShouldEqual, StatusOK)
 				So(compact(response.ResultSet), ShouldEqual, compact(want))
 				So(response.Message, ShouldBeEmpty)
@@ -119,11 +114,7 @@ func TestGetResponse(t *testing.T) {
 			})
 			Convey("And the command lookup should return the generic response when the user is not mapped to a user specific response", func() {
 				response := lookup.GetResponse("jjazwiec", "publish data")
-				want := `<?xml version="1.0" encoding="UTF-8"?>
-    <moca-response>
-      <session-id></session-id>
-      <status>0</status>
-      <moca-results>
+				want := `<moca-results>
         <metadata>
             <column name="line" type="I" length="0" nullable="true"/>
             <column name="text" type="S" length="0" nullable="true"/>
@@ -134,8 +125,7 @@ func TestGetResponse(t *testing.T) {
                 <field>hello</field>
             </row>
         </data>
-      </moca-results>
-    </moca-response>`
+    </moca-results>`
 				So(response.StatusCode, ShouldEqual, StatusOK)
 				So(compact(response.ResultSet), ShouldEqual, compact(want))
 				So(response.Message, ShouldBeEmpty)
@@ -147,11 +137,7 @@ func TestGetResponse(t *testing.T) {
 			})
 			Convey("And the command lookup should return the specific response when the user is mapped to a user specific response", func() {
 				response := lookup.GetResponse("super", "publish data")
-				want := `<?xml version="1.0" encoding="UTF-8"?>
-    <moca-response>
-      <session-id></session-id>
-      <status>0</status>
-      <moca-results>
+				want := `<moca-results>
         <metadata>
             <column name="line" type="I" length="0" nullable="true"/>
             <column name="text" type="S" length="0" nullable="true"/>
@@ -162,8 +148,7 @@ func TestGetResponse(t *testing.T) {
                 <field>world</field>
             </row>
         </data>
-      </moca-results>
-    </moca-response>`
+    </moca-results>`
 				So(response.StatusCode, ShouldEqual, StatusOK)
 				So(compact(response.ResultSet), ShouldEqual, compact(want))
 				So(response.Message, ShouldBeEmpty)

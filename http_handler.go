@@ -49,11 +49,11 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 		return
 	}
 
-	query := strings.TrimSpace(request.Query.Text)
+	query := normalizeQuery(request.Query.Text)
 	// if it's groovy or sql, leave it alone;
 	// else, we'll standardize the spacing and then check if this is a ping or login user command
 	if !strings.HasPrefix(query, "[") {
-		query = strings.Join(strings.Fields(query), " ")
+		// query = strings.Join(strings.Fields(query), " ")
 		tokens := strings.SplitN(query, " where ", 2)
 		if tokens[0] == "ping" {
 			c.Data(http.StatusOK, "application/moca-xml", generatePingResponse())
@@ -107,10 +107,19 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 	}
 
 	response := h.lookup.GetResponse("super", query)
-	body, err := xml.Marshal(mocaprotocol.MocaResponse{
+	mocaResponse := mocaprotocol.MocaResponse{
 		Status:  response.StatusCode,
 		Message: response.Message,
-	})
+	}
+	if response.ResultSet != "" {
+		err := xml.Unmarshal([]byte(response.ResultSet), &mocaResponse.MocaResults)
+		if err != nil {
+			log.Default().Printf("error unmarshalling response: %v", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+	}
+	body, err := xml.Marshal(mocaResponse)
 	if err != nil {
 		log.Default().Printf("error marshalling response: %v", err)
 		c.Status(http.StatusInternalServerError)
@@ -139,6 +148,13 @@ func (h *MocaRequestHandler) GetSessionKey(request mocaprotocol.MocaRequest) (st
 	}
 	body, _ := xml.Marshal(response)
 	return "", append(XMLDeclaration, body...)
+}
+
+// normalizeQuery removes extra whitespace from the query
+func normalizeQuery(query string) string {
+	// handle 1=1 vs 1 = 1
+	query = strings.ReplaceAll(query, "=", " = ")
+	return strings.Join(strings.Fields(query), " ")
 }
 
 func generatePingResponse() []byte {
