@@ -100,13 +100,13 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 	}
 
 	// now, make sure they have a valid session key
-	_, invalidKey := h.GetSessionKey(request)
+	sessionKey, invalidKey := h.GetSessionKey(request)
 	if invalidKey != nil {
 		c.Data(http.StatusOK, "application/moca-xml", invalidKey)
 		return
 	}
-
-	response := h.lookup.GetResponse("super", query)
+	userName := h.sessions[sessionKey]
+	response := h.lookup.GetResponse(userName, query)
 	mocaResponse := mocaprotocol.MocaResponse{
 		Status:  response.StatusCode,
 		Message: response.Message,
