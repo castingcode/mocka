@@ -107,8 +107,9 @@ func (r ResponseLookup) GetResponse(user, query string) Response {
 
 	// else, if it starts with local syntax,
 	// we'll try matching on just the command regardless of the where clause or anything after that
-	parts := strings.SplitAfterN(query, " where ", 2) // TODO: Make this regex to not get tripped up by whitespace
-	response, err = r.getResponse(user, parts[0])
+	parts := strings.Split(query, " where ") // TODO: Make this regex to not get tripped up by whitespace
+	commandName := strings.TrimSpace(parts[0])
+	response, err = r.getResponse(user, commandName)
 	if err == nil {
 		return response
 	}

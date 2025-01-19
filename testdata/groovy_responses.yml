@@ -1,0 +1,16 @@
+"[[ def numbers = [1, 2, 3] x = numbers[0] ]]":
+  status: 0
+  results: >
+    <moca-results>
+        <metadata>
+            <column name="x" type="I" length="0" nullable="true"/>
+        </metadata>
+        <data>
+            <row>
+                <field>1</field>
+            </row>
+        </data>
+    </moca-results>
+"[[ throw new Exception('error') ]]":
+  status: 531
+  message: "Groovy Script Exception: java.lang.Exception: error"

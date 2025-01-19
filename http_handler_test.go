@@ -351,6 +351,65 @@ func TestHandleMocaRequest_InvalidGroovy(t *testing.T) {
 	})
 }
 
+func TestHandleMocaRequest_ValidGroovy(t *testing.T) {
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := createResponseFiles(t, "testdata/groovy_responses.yml", "")
+		lookup, err := NewResponseLookup(WithDataFolder(responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to run a Groovy Statement that returns results", func() {
+			sql := `[[
+			def numbers = [1, 2, 3] 
+			x = numbers[0]
+			]]`
+			req := buildRequest(t, sql, WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusOK)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 1)
+				So(response.MocaResults.Metadata.Columns[0].Name, ShouldEqual, "x")
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "1")
+			})
+		})
+
+		Convey("When I attempt to run a Groovy Statement that returns an error", func() {
+			sql := `[[ throw new Exception('error') ]]`
+			req := buildRequest(t, sql, WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be StatusGroovyException", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusGroovyException)
+				So(response.Message, ShouldEqual, "Groovy Script Exception: java.lang.Exception: error")
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
 func TestHandleMocaRequest_InvalidLocalSyntax(t *testing.T) {
 
 	sessionKey := uuid.NewString()
@@ -378,6 +437,85 @@ func TestHandleMocaRequest_InvalidLocalSyntax(t *testing.T) {
 				So(err, ShouldBeNil)
 				So(response.Status, ShouldEqual, StatusCommandNotFound)
 				So(response.Message, ShouldEqual, "Command (list players) not found")
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_ValidLocalSyntax(t *testing.T) {
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := createResponseFiles(t, "testdata/local_syntax.yml", "")
+		lookup, err := NewResponseLookup(WithDataFolder(responseDirectory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions[sessionKey] = "super"
+		gin.SetMode(gin.TestMode)
+		router := gin.New()
+		RegisterRoutes(router, handler)
+
+		Convey("When I attempt to run local syntax by exact match that returns results", func() {
+			sql := `publish usr data
+			where a = 'foo'`
+			req := buildRequest(t, sql, WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusOK)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 1)
+				So(response.MocaResults.Metadata.Columns[0].Name, ShouldEqual, "a")
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "foo")
+			})
+		})
+
+		Convey("When I attempt to run local syntax by command name match that returns results", func() {
+			sql := `publish usr data
+			where name = 'bub'`
+			req := buildRequest(t, sql, WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, StatusOK)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 1)
+				So(response.MocaResults.Metadata.Columns[0].Name, ShouldEqual, "a")
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "bar")
+			})
+		})
+
+		Convey("When I attempt to run local syntaxt that returns an error", func() {
+			sql := `publish usr data
+			where a = 'bar'`
+			req := buildRequest(t, sql, WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			Convey("Then the response should be StatusGroovyException", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 90001)
+				So(response.Message, ShouldEqual, "this is really unexpected")
 				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
 				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
 			})
