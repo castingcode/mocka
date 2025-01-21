@@ -15,6 +15,38 @@ If no exact match is found for requests with local syntax, it will look for a ma
 ignoring the where clause or any subsequent commands. The server allows for user-specific responses, 
 enabling variations in the mock responses you create.
 
+## Why? What does mocka do?
+
+Mocka is not a tool to test your MOCA server.
+It is intended to be used to test the things you create to interface with your MOCA server.
+Note that the scope of mocka is simply to provide a canned response for a given request
+which you can use in tests of your code. It can not be used to validate any side effects
+produced as a result of your code.
+
+For example, if you have a dashboard that executes a query in MOCA to display current inventory levels,
+if you want to test that against an actual MOCA server, you will either need to account for the data
+not being consistent in your tests. Or you can handle setup and tear down to get the data into a known
+state for your test. With mocka, it just provides an easy way to get the same response every time you
+send a specific request, allowing you to write integration tests without reduced overhead around test data
+maintenance. It allows you to easily validate you're handling deserialization correctly, things like handling
+date formatting, handling nulls, etc.
+
+What mocka does not do is try to emulate any of the side effects resulting from the execution of your 
+MOCA queries.  Beyond returning a result set, mocka makes no attempt to emulate any other behavior of your
+MOCA server. If your testing needs are such that you need to validate that your command resulted in the
+correct data being written to the correct tables, the proper transactions were sent to any other systems,
+the proper triggers were fired, the proper labels or reports were generated, or any other type of side
+effect resulting from your executed query, mocka is not the tool for you.
+
+In other words, if you are writing some code that would log into a MOCA server and execute a "move inventory"
+command, and you wanted to validate your code handles various sorts of responses, such as various failures
+or varying result sets due to moves at various inventory levels, you could use mocka for that. If you needed
+to validate the inventory was successfully moved and the proper transactions were logged, you'll need to 
+use a real MOCA server or look for another tool.
+
+This does not replace any end-to-end testing with an actual MOCA server. It's just intended to make testing
+the quick and simple cases quickly and simply.
+
 ## Installation
 
 To install the module, use the following command:
@@ -41,6 +73,7 @@ The following flags are available in the main package:
 ## Responses YAML
 
 The responses YAML file defines the mock responses for the server, where the command is the key, and the response as XML is the value.
+Note these are not the full responses from the server.
 Here are some examples:
 
 ```yaml
