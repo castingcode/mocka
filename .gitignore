@@ -1,3 +1,5 @@
 coverage.out
 coverage.html
 samples/
+# Added by goreleaser init:
+dist/
