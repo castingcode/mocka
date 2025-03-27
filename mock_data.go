@@ -3,6 +3,7 @@ package mocka
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,18 +21,12 @@ type MockDataFile struct {
 	Data []MockData `yaml:"data"`
 }
 
-// // MockUserData is used to import the mock data from a yaml file.
-// type MockUserData struct {
-// 	User     string     `yaml:"user"`
-// 	MockData []MockData `yaml:"mocks"`
-// }
-
 type MockUserDataFile map[string]MockDataFile
 
 func (m MockDataFile) AsResponseMap() ResponseMap {
 	responseMap := make(ResponseMap)
 	for _, data := range m.Data {
-		responseMap[data.Query] = data.Response
+		responseMap[strings.TrimSpace(data.Query)] = data.Response
 	}
 	return responseMap
 }

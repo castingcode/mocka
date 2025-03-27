@@ -15,7 +15,7 @@ data:
             </data>
         </moca-results>
   - query: >
-      publish usr data:
+      publish usr data
     response:
       status: 0
       results: >
@@ -30,7 +30,7 @@ data:
             </data>
         </moca-results>
   - query: >
-      publish usr data where a = 'bar':
+      publish usr data where a = 'bar'
     response:
       status: 90001
       message: "this is really unexpected"

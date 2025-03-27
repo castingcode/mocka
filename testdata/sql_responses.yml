@@ -1,5 +1,5 @@
 data:
-  - query:
+  - query: >
       [select 'x' as myval from dual where 1 = 1]
     response:
       status: 0
@@ -14,7 +14,7 @@ data:
                 </row>
             </data>
         </moca-results>
-  - query:
+  - query: >
       [select 'x' as myval from dual where 1 = 2]
     response:
       status: -1403
