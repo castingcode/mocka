@@ -72,49 +72,58 @@ The following flags are available in the main package:
 
 ## Responses YAML
 
-The responses YAML file defines the mock responses for the server, where the command is the key, and the response as XML is the value.
+The responses YAML file defines the mock responses for the server. There is a data section, followed by an array of
+query and response pairs.  The query will be a string, and the accompanying response contains the status, andy error message,
+and the moca result set as XML.
 Note these are not the full responses from the server.
 Here are some examples:
 
 ```yaml
-publish data where a = 'foo':
-  status: 0
-  results: >
-    <moca-results>
-        <metadata>
+data:
+  - query: >
+      publish data where a = 'foo'
+    response:
+      status: 0
+      results: >
+        <moca-results>
+          <metadata>
             <column name="a" type="I" length="0" nullable="true"/>
-        </metadata>
-        <data>
+          </metadata>
+          <data>
             <row>
-                <field>foo</field>
+              <field>foo</field>
             </row>
-        </data>
-    </moca-results>
-publish data:
-  status: 0
-  results: >
-    <moca-results>
-        <metadata>
-            <column name="line" type="I" length="0" nullable="true"/>
-            <column name="text" type="S" length="0" nullable="true"/>
-        </metadata>
-        <data>
-            <row>
-                <field>0</field>
-                <field>hello</field>
-            </row>
-        </data>
-    </moca-results>
-list warehouses:
-  status: 510
-  message: No Data Found
+          </data>
+       </moca-results>
+  - query:
+      publish data
+    response:
+      status: 0
+      results: >
+          <moca-results>
+              <metadata>
+                  <column name="line" type="I" length="0" nullable="true"/>
+                  <column name="text" type="S" length="0" nullable="true"/>
+              </metadata>
+              <data>
+                  <row>
+                      <field>0</field>
+                      <field>hello</field>
+                  </row>
+              </data>
+          </moca-results>
+  - query:
+      list warehouses
+    response:
+      status: 510
+      message: No Data Found
 ```
 
 ### Notes
 
 - Groovy and SQL requests are matched exactly.
 - Local syntax requests will first attempt an exact match. If no exact match is found, they will match based on the command name, ignoring any `where` clause or subsequent commands.
-- Since the file is in YAML format, you need to enclose any Groovy or SQL keys in quotes and escape any quotes within the string.
+- Note that if your command includes quotes, brackets, etc., you may need to use one of the block style indicators (| or >).
 
 ## Usage
 
