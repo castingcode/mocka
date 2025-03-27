@@ -45,6 +45,26 @@ func TestGetResponse(t *testing.T) {
 
 		})
 
+		Convey("When the user file is invalid", func() {
+			data, err := os.ReadFile("testdata/responses.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = os.WriteFile(fmt.Sprintf("%s/responses.yml", responseDirectory), []byte(data), 0644)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = os.WriteFile(fmt.Sprintf("%s/user_responses.yml", responseDirectory), []byte("bad contents"), 0644)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = NewResponseLookup(WithDataFolder(responseDirectory))
+			Convey("Then an error should be returned", func() {
+				So(err, ShouldNotBeNil)
+			})
+
+		})
+
 		Convey("When the command is mapped for all users", func() {
 			data, err := os.ReadFile("testdata/responses.yml")
 			if err != nil {

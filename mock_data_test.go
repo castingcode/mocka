@@ -41,6 +41,35 @@ func TestResponseMapFromFile(t *testing.T) {
 	})
 }
 
+func TestResponseMapFromFile_Error(t *testing.T) {
+	Convey("Given I have a MockDataFile", t, func() {
+		path := "testdata/does_not_exist.yml"
+
+		Convey("When I read it into a ResponseMap", func() {
+			responseMap, err := ResponseMapFromFile(path)
+
+			Convey("Then there should be an error", func() {
+				So(err, ShouldNotBeNil)
+				So(responseMap, ShouldBeNil)
+			})
+		})
+	})
+
+	Convey("Given I have a MockDataFile", t, func() {
+		path := "testdata/responses_bad.yml"
+
+		Convey("When I read it into a ResponseMap", func() {
+			responseMap, err := ResponseMapFromFile(path)
+
+			Convey("Then there should be an error", func() {
+				So(err, ShouldNotBeNil)
+				So(responseMap, ShouldBeNil)
+			})
+		})
+	})
+
+}
+
 func TestUserResponseMapFromFile(t *testing.T) {
 	Convey("Given I have a MockUserDataFile", t, func() {
 		path := "testdata/user_responses.yml"
@@ -67,6 +96,34 @@ func TestUserResponseMapFromFile(t *testing.T) {
                   </row>
               </data>
           </moca-results>`))
+			})
+		})
+	})
+}
+
+func TestUserResponseMapFromFile_Error(t *testing.T) {
+	Convey("Given I have a MockUserDataFile", t, func() {
+		path := "testdata/does_not_exist.yml"
+
+		Convey("When I read it into a UserResponseMap", func() {
+			responseMap, err := UserResponseMapFromFile(path)
+
+			Convey("Then there should be an error", func() {
+				So(err, ShouldNotBeNil)
+				So(responseMap, ShouldBeNil)
+			})
+		})
+	})
+
+	Convey("Given I have a MockUserDataFile", t, func() {
+		path := "testdata/user_responses_bad.yml"
+
+		Convey("When I read it into a UserResponseMap", func() {
+			responseMap, err := UserResponseMapFromFile(path)
+
+			Convey("Then there should be an error", func() {
+				So(err, ShouldNotBeNil)
+				So(responseMap, ShouldBeNil)
 			})
 		})
 	})
