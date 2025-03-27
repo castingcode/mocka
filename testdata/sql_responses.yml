@@ -1,16 +1,21 @@
-"[select 'x' as myval from dual where 1 = 1]":
-  status: 0
-  results: >
-    <moca-results>
-        <metadata>
-            <column name="myval" type="S" length="0" nullable="true"/>
-        </metadata>
-        <data>
-            <row>
-                <field>x</field>
-            </row>
-        </data>
-    </moca-results>
-"[select 'x' as myval from dual where 1 = 2]":
-  status: -1403
-  message: No Data Found
+data:
+  - query: >
+      [select 'x' as myval from dual where 1 = 1]
+    response:
+      status: 0
+      results: >
+        <moca-results>
+            <metadata>
+                <column name="myval" type="S" length="0" nullable="true"/>
+            </metadata>
+            <data>
+                <row>
+                    <field>x</field>
+                </row>
+            </data>
+        </moca-results>
+  - query: >
+      [select 'x' as myval from dual where 1 = 2]
+    response:
+      status: -1403
+      message: No Data Found

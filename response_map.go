@@ -3,10 +3,7 @@ package mocka
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -19,6 +16,7 @@ const (
 	StatusInvalidSessionKey = 523
 )
 
+// Response contains the mocked status code, message, and result set
 type Response struct {
 	StatusCode int    `yaml:"status"`
 	Message    string `yaml:"message,omitempty"`
@@ -31,6 +29,7 @@ type ResponseMap map[string]Response
 // contains user-specific responses
 type UserResponseMap map[string]ResponseMap
 
+// ResponseLookup stores the responses for all users and user-specific responses
 type ResponseLookup struct {
 	userResponses    UserResponseMap
 	allUserResponses ResponseMap
@@ -54,23 +53,13 @@ func NewResponseLookup(opts ...ResponseLookupOption) (*ResponseLookup, error) {
 	for _, opt := range opts {
 		opt(responseLookup)
 	}
-	responseMapFile, err := os.ReadFile(fmt.Sprintf("%s/responses.yml", responseLookup.dataFolder))
-	if err != nil {
-		return nil, fmt.Errorf("could not read responses.yml %w", err)
-	}
 
-	var responseMap ResponseMap
-	err = yaml.Unmarshal(responseMapFile, &responseMap)
+	responseMap, err := ResponseMapFromFile(fmt.Sprintf("%s/responses.yml", responseLookup.dataFolder))
 	if err != nil {
 		return nil, fmt.Errorf("could parse responses.yml %w", err)
 	}
 
-	userResponseMapFile, err := os.ReadFile(fmt.Sprintf("%s/user_responses.yml", responseLookup.dataFolder))
-	if err != nil {
-		return nil, fmt.Errorf("could not read user responses.yml %w", err)
-	}
-	var userResponseMap UserResponseMap
-	err = yaml.Unmarshal(userResponseMapFile, &userResponseMap)
+	userResponseMap, err := UserResponseMapFromFile(fmt.Sprintf("%s/user_responses.yml", responseLookup.dataFolder))
 	if err != nil {
 		return nil, fmt.Errorf("could parse user responses.yml %w", err)
 	}

@@ -1,16 +1,19 @@
 super:
-  publish data:
-    status: 0
-    results: >
-      <moca-results>
-          <metadata>
-              <column name="line" type="I" length="0" nullable="true"/>
-              <column name="text" type="S" length="0" nullable="true"/>
-          </metadata>
-          <data>
-            <row>
-                <field>0</field>
-                <field>world</field>
-            </row>
-          </data>
-      </moca-results>
+  data:
+    - query:
+        publish data
+      response:  
+        status: 0
+        results: >
+          <moca-results>
+              <metadata>
+                  <column name="line" type="I" length="0" nullable="true"/>
+                  <column name="text" type="S" length="0" nullable="true"/>
+              </metadata>
+              <data>
+                <row>
+                    <field>0</field>
+                    <field>world</field>
+                </row>
+              </data>
+          </moca-results>

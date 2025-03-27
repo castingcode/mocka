@@ -1,29 +1,36 @@
-publish usr data where a = 'foo':
-  status: 0
-  results: >
-    <moca-results>
-        <metadata>
-            <column name="a" type="I" length="0" nullable="true"/>
-        </metadata>
-        <data>
-            <row>
-                <field>foo</field>
-            </row>
-        </data>
-    </moca-results>
-publish usr data:
-  status: 0
-  results: >
-    <moca-results>
-        <metadata>
-            <column name="a" type="I" length="0" nullable="true"/>
-        </metadata>
-        <data>
-            <row>
-                <field>bar</field>
-            </row>
-        </data>
-    </moca-results>
-publish usr data where a = 'bar':
-  status: 90001
-  message: "this is really unexpected"
+data:
+  - query: >
+      publish usr data where a = 'foo'
+    response:
+      status: 0
+      results: >
+        <moca-results>
+            <metadata>
+                <column name="a" type="I" length="0" nullable="true"/>
+            </metadata>
+            <data>
+                <row>
+                    <field>foo</field>
+                </row>
+            </data>
+        </moca-results>
+  - query: >
+      publish usr data
+    response:
+      status: 0
+      results: >
+        <moca-results>
+            <metadata>
+                <column name="a" type="I" length="0" nullable="true"/>
+            </metadata>
+            <data>
+                <row>
+                    <field>bar</field>
+                </row>
+            </data>
+        </moca-results>
+  - query: >
+      publish usr data where a = 'bar'
+    response:
+      status: 90001
+      message: "this is really unexpected"
