@@ -33,7 +33,10 @@ func router(folder *string) (*gin.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	lookup, _ := mocka.NewResponseLookup(mocka.WithDataFolder(f))
+	lookup, err := mocka.NewResponseLookup(mocka.NewFileResponseLoader(f))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create response lookup: %w", err)
+	}
 	handler := mocka.NewMocaRequestHandler(lookup)
 
 	gin.SetMode(gin.ReleaseMode)

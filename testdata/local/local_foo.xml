@@ -1,0 +1,10 @@
+<moca-results>
+    <metadata>
+        <column name="a" type="I" length="0" nullable="true"/>
+    </metadata>
+    <data>
+        <row>
+            <field>foo</field>
+        </row>
+    </data>
+</moca-results>

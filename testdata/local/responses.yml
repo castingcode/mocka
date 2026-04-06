@@ -1,0 +1,19 @@
+responses:
+  - match:
+      type: exact
+      query: "publish usr data where a = 'foo'"
+    response:
+      status: 0
+      results: local_foo.xml
+  - match:
+      type: exact
+      query: "publish usr data where a = 'bar'"
+    response:
+      status: 90001
+      message: "this is really unexpected"
+  - match:
+      type: prefix
+      prefix: "publish usr data"
+    response:
+      status: 0
+      results: local_bar.xml

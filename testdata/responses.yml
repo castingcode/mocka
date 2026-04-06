@@ -1,23 +1,13 @@
-data:
-  - query:
-      publish data
+responses:
+  - match:
+      type: exact
+      query: "publish data"
     response:
       status: 0
-      results: >
-          <moca-results>
-              <metadata>
-                  <column name="line" type="I" length="0" nullable="true"/>
-                  <column name="text" type="S" length="0" nullable="true"/>
-              </metadata>
-              <data>
-                  <row>
-                      <field>0</field>
-                      <field>hello</field>
-                  </row>
-              </data>
-          </moca-results>
-  - query:
-      list warehouses
+      results: publish_data_result.xml
+  - match:
+      type: exact
+      query: "list warehouses"
     response:
       status: 510
       message: No Data Found
