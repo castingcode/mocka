@@ -1,0 +1,13 @@
+responses:
+  - match:
+      type: exact
+      query: "[[ def numbers = [1, 2, 3] x = numbers[0] ]]"
+    response:
+      status: 0
+      results: groovy_r1.xml
+  - match:
+      type: exact
+      query: "[[ throw new exception('error') ]]"
+    response:
+      status: 531
+      message: "Groovy Script Exception: java.lang.Exception: error"

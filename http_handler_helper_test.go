@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/castingcode/mocaprotocol"
@@ -40,7 +42,7 @@ func buildRequest(t *testing.T, command string, options ...TestRequestOption) *h
 	return req
 }
 
-// creteEmptyResponseFiles creates empty response files in a temporary directory and returns the directory path
+// creteEmptyResponseFiles creates an empty responses.yml in a temporary directory and returns the directory path.
 func creteEmptyResponseFiles(t *testing.T) string {
 	t.Helper()
 	responseDirectory := t.TempDir()
@@ -50,56 +52,43 @@ func creteEmptyResponseFiles(t *testing.T) string {
 		return responseDirectory
 	}
 	f.Close()
-	uf, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
-	if err != nil {
-		t.Fatal(err)
-		return responseDirectory
-	}
-	uf.Close()
 	return responseDirectory
 }
 
-// createResponseFiles creates response files in a temporary directory and returns the directory path
-func createResponseFiles(t *testing.T, responseFilePath, userResponseFilePath string) string {
+// createResponseDir copies all files (non-recursive) from srcDir into a temp
+// directory and returns it. An empty responses.yml is created if not present
+// in srcDir.
+func createResponseDir(t *testing.T, srcDir string) string {
 	t.Helper()
-	responseDirectory := t.TempDir()
-	if responseFilePath == "" {
-		f, err := os.Create(fmt.Sprintf("%s/responses.yml", responseDirectory))
-		if err != nil {
-			t.Fatal(err)
-			return responseDirectory
+	tempDir := t.TempDir()
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatalf("createResponseDir: reading %s: %v", srcDir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
 		}
-		f.Close()
-	} else {
-		data, err := os.ReadFile(responseFilePath)
+		data, err := os.ReadFile(filepath.Join(srcDir, e.Name()))
 		if err != nil {
-			t.Fatal(err)
-			return responseDirectory
+			t.Fatalf("createResponseDir: reading file %s: %v", e.Name(), err)
 		}
-		err = os.WriteFile(fmt.Sprintf("%s/responses.yml", responseDirectory), []byte(data), 0644)
-		if err != nil {
-			t.Fatal(err)
-			return responseDirectory
+		if err := os.WriteFile(filepath.Join(tempDir, e.Name()), data, 0644); err != nil {
+			t.Fatalf("createResponseDir: writing file %s: %v", e.Name(), err)
 		}
 	}
-	if userResponseFilePath == "" {
-		f, err := os.Create(fmt.Sprintf("%s/user_responses.yml", responseDirectory))
+	p := filepath.Join(tempDir, "responses.yml")
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		f, err := os.Create(p)
 		if err != nil {
-			t.Fatal(err)
-			return responseDirectory
+			t.Fatalf("createResponseDir: creating responses.yml: %v", err)
 		}
 		f.Close()
-	} else {
-		data, err := os.ReadFile(userResponseFilePath)
-		if err != nil {
-			t.Fatal(err)
-			return responseDirectory
-		}
-		err = os.WriteFile(fmt.Sprintf("%s/user_responses.yml", responseDirectory), []byte(data), 0644)
-		if err != nil {
-			t.Fatal(err)
-			return responseDirectory
-		}
 	}
-	return responseDirectory
+	return tempDir
+}
+
+// compact normalises whitespace for string comparison in tests.
+func compact(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
