@@ -69,4 +69,15 @@ func Test_buildMux(t *testing.T) {
 			t.Fatalf("expected error, got nil")
 		}
 	})
+
+	t.Run("malformed responses.yml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tempDir, "responses.yml"), []byte("responses:\n  - [unclosed"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := buildMux(&tempDir)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+	})
 }

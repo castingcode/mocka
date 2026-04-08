@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/castingcode/mocaprotocol"
@@ -489,6 +490,64 @@ func TestHandleMocaRequest_ValidLocalSyntax(t *testing.T) {
 				So(response.Message, ShouldEqual, "this is really unexpected")
 				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
 				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_MalformedXMLBody(t *testing.T) {
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := t.TempDir()
+		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
+		handler := NewMocaRequestHandler(lookup)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
+
+		Convey("When I send a request with a malformed XML body", func() {
+
+			req, err := http.NewRequest("POST", "/service", strings.NewReader("not valid xml"))
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/moca-xml")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be 400 Bad Request", func() {
+				So(w.Code, ShouldEqual, http.StatusBadRequest)
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_InvalidResultSetXML(t *testing.T) {
+
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler with a response containing invalid result XML", t, func() {
+
+		loader := NewInMemoryResponseLoader(
+			WithExactMatch("get data", NewResponse(StatusOK).WithResultSet("not valid xml").Build()),
+		)
+		lookup, err := NewResponseLookup(loader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions.Add(sessionKey, "super")
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
+
+		Convey("When I run the command", func() {
+
+			req := buildRequest(t, "get data", WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be 500 Internal Server Error", func() {
+				So(w.Code, ShouldEqual, http.StatusInternalServerError)
 			})
 		})
 	})
