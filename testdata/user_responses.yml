@@ -1,8 +1,0 @@
-super:
-  responses:
-    - match:
-        type: exact
-        query: "publish data"
-      response:
-        status: 0
-        results: super_publish_data_result.xml
