@@ -69,11 +69,10 @@ func TestMyMocaClient(t *testing.T) {
         t.Fatal(err)
     }
 
-    gin.SetMode(gin.TestMode)
-    router := gin.New()
-    mocka.RegisterRoutes(router, mocka.NewMocaRequestHandler(lookup))
+    mux := http.NewServeMux()
+    mocka.RegisterRoutes(mux, mocka.NewMocaRequestHandler(lookup))
 
-    server := httptest.NewServer(router)
+    server := httptest.NewServer(mux)
     defer server.Close()
 
     // Point your MOCA client at server.URL and run your tests.

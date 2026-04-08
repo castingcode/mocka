@@ -2,14 +2,13 @@ package mocka
 
 import (
 	"encoding/xml"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"math/rand"
-
 	"github.com/castingcode/mocaprotocol"
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -21,15 +20,14 @@ func TestHandleMocaRequest_Ping(t *testing.T) {
 		responseDirectory := t.TempDir()
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I send a ping command", func() {
 
 			req := buildRequest(t, "ping")
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be OK with no results", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -52,15 +50,14 @@ func TestHandleMocaRequest_Login(t *testing.T) {
 		responseDirectory := t.TempDir()
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt to login with a valid user name and password", func() {
 
 			req := buildRequest(t, "login user where usr_id = 'anyuser' and usr_pswd = 'anypass'")
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be OK with a session key", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -87,7 +84,7 @@ func TestHandleMocaRequest_Login(t *testing.T) {
 
 			req := buildRequest(t, "login user where usr_id = 'anyuser'")
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be an error about missing password", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -111,15 +108,14 @@ func TestHandleMocaRequest_Logout(t *testing.T) {
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt to logout with a valid session key", func() {
 
 			req := buildRequest(t, "logout user", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be OK and the session should be removed", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -137,7 +133,7 @@ func TestHandleMocaRequest_Logout(t *testing.T) {
 
 			req := buildRequest(t, "logout user", WithSessionKey(uuid.NewString()))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be invalid session key", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -159,9 +155,8 @@ func TestHandleMocaRequest_NoContentType(t *testing.T) {
 		responseDirectory := t.TempDir()
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt to send a command with no content type header", func() {
 
@@ -171,7 +166,7 @@ func TestHandleMocaRequest_NoContentType(t *testing.T) {
 			}
 
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be an html error page", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -192,15 +187,14 @@ func TestHandleMocaRequest_NotAuthenticated(t *testing.T) {
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt to run a moca command without a session key", func() {
 
 			req := buildRequest(t, "list shipments")
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be invalid session key", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -226,15 +220,14 @@ func TestHandleMocaRequest_InvalidSQL(t *testing.T) {
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt an unregistered SQL statement", func() {
 
 			req := buildRequest(t, "[select * from notable]", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be StatusCommandNotFound", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -262,16 +255,15 @@ func TestHandleMocaRequest_ValidSQL(t *testing.T) {
 		}
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt a SQL statement that returns results", func() {
 			sql := `[select 'x' as myval
 			           from dual where 1=1]`
 			req := buildRequest(t, sql, WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be OK", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -292,7 +284,7 @@ func TestHandleMocaRequest_ValidSQL(t *testing.T) {
 			           from dual where 1=2]`
 			req := buildRequest(t, sql, WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be StatusDBNoDataFound", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -318,15 +310,14 @@ func TestHandleMocaRequest_InvalidGroovy(t *testing.T) {
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt an unregistered Groovy statement", func() {
 
 			req := buildRequest(t, "[[com.example.NoObject.doNothing()]]", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be StatusCommandNotFound", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -353,9 +344,8 @@ func TestHandleMocaRequest_ValidGroovy(t *testing.T) {
 		}
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt to run a Groovy statement that returns results", func() {
 			groovy := `[[
@@ -364,7 +354,7 @@ func TestHandleMocaRequest_ValidGroovy(t *testing.T) {
 			]]`
 			req := buildRequest(t, groovy, WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be OK", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -384,7 +374,7 @@ func TestHandleMocaRequest_ValidGroovy(t *testing.T) {
 			groovy := `[[ throw new Exception('error') ]]`
 			req := buildRequest(t, groovy, WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be StatusGroovyException", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -410,15 +400,14 @@ func TestHandleMocaRequest_InvalidLocalSyntax(t *testing.T) {
 		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I attempt an unregistered local syntax command", func() {
 
 			req := buildRequest(t, "list players", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be StatusCommandNotFound", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -446,14 +435,13 @@ func TestHandleMocaRequest_ValidLocalSyntax(t *testing.T) {
 		}
 		handler := NewMocaRequestHandler(lookup)
 		handler.sessions.Add(sessionKey, "super")
-		gin.SetMode(gin.TestMode)
-		router := gin.New()
-		RegisterRoutes(router, handler)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
 
 		Convey("When I run local syntax that matches exactly", func() {
 			req := buildRequest(t, "publish usr data where a = 'foo'", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be OK with the exact-match result", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -472,7 +460,7 @@ func TestHandleMocaRequest_ValidLocalSyntax(t *testing.T) {
 		Convey("When I run local syntax that matches by prefix", func() {
 			req := buildRequest(t, "publish usr data where name = 'bub'", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should be OK with the prefix-match result", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -491,7 +479,7 @@ func TestHandleMocaRequest_ValidLocalSyntax(t *testing.T) {
 		Convey("When I run local syntax that returns an error", func() {
 			req := buildRequest(t, "publish usr data where a = 'bar'", WithSessionKey(sessionKey))
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			mux.ServeHTTP(w, req)
 
 			Convey("Then the response should contain the registered error", func() {
 				So(w.Code, ShouldEqual, http.StatusOK)
@@ -502,6 +490,64 @@ func TestHandleMocaRequest_ValidLocalSyntax(t *testing.T) {
 				So(response.Message, ShouldEqual, "this is really unexpected")
 				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
 				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_MalformedXMLBody(t *testing.T) {
+
+	Convey("Given I have a MocaRequestHandler", t, func() {
+
+		responseDirectory := t.TempDir()
+		lookup, _ := NewResponseLookup(NewFileResponseLoader(responseDirectory))
+		handler := NewMocaRequestHandler(lookup)
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
+
+		Convey("When I send a request with a malformed XML body", func() {
+
+			req, err := http.NewRequest("POST", "/service", strings.NewReader("not valid xml"))
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/moca-xml")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be 400 Bad Request", func() {
+				So(w.Code, ShouldEqual, http.StatusBadRequest)
+			})
+		})
+	})
+}
+
+func TestHandleMocaRequest_InvalidResultSetXML(t *testing.T) {
+
+	sessionKey := uuid.NewString()
+
+	Convey("Given I have a MocaRequestHandler with a response containing invalid result XML", t, func() {
+
+		loader := NewInMemoryResponseLoader(
+			WithExactMatch("get data", NewResponse(StatusOK).WithResultSet("not valid xml").Build()),
+		)
+		lookup, err := NewResponseLookup(loader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewMocaRequestHandler(lookup)
+		handler.sessions.Add(sessionKey, "super")
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, handler)
+
+		Convey("When I run the command", func() {
+
+			req := buildRequest(t, "get data", WithSessionKey(sessionKey))
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be 500 Internal Server Error", func() {
+				So(w.Code, ShouldEqual, http.StatusInternalServerError)
 			})
 		})
 	})

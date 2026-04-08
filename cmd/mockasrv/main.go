@@ -3,11 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/castingcode/mocka"
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -15,20 +15,20 @@ func main() {
 	folder := flag.String("folder", "", "Folder to store mock data")
 	flag.Parse()
 
-	r, err := router(folder)
+	mux, err := buildMux(folder)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 	address := fmt.Sprintf(":%d", *port)
-	err = r.Run(address)
+	err = http.ListenAndServe(address, mux)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
-func router(folder *string) (*gin.Engine, error) {
+func buildMux(folder *string) (*http.ServeMux, error) {
 	f, err := dataFolder(folder)
 	if err != nil {
 		return nil, err
@@ -39,12 +39,10 @@ func router(folder *string) (*gin.Engine, error) {
 	}
 	handler := mocka.NewMocaRequestHandler(lookup)
 
-	gin.SetMode(gin.ReleaseMode)
-	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
-	mocka.RegisterRoutes(router, handler)
+	mux := http.NewServeMux()
+	mocka.RegisterRoutes(mux, handler)
 
-	return router, nil
+	return mux, nil
 }
 
 func dataFolder(folderFlag *string) (string, error) {
