@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/castingcode/mocaprotocol"
@@ -86,9 +85,4 @@ func createResponseDir(t *testing.T, srcDir string) string {
 		f.Close()
 	}
 	return tempDir
-}
-
-// compact normalises whitespace for string comparison in tests.
-func compact(s string) string {
-	return strings.Join(strings.Fields(s), " ")
 }

@@ -7,17 +7,21 @@ import (
 	"strings"
 
 	"github.com/castingcode/mocaprotocol"
-	"github.com/gin-gonic/gin"
 )
 
 var XMLDeclaration = []byte(`<?xml version="1.0" encoding="UTF-8"?>`)
 
-type MocaRequestHandlerInterface interface {
-	HandleMocaRequest(c *gin.Context)
+type Router interface {
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+	Handle(pattern string, handler http.Handler)
 }
 
-func RegisterRoutes(router gin.IRoutes, handler MocaRequestHandlerInterface) {
-	router.POST("/service", handler.HandleMocaRequest)
+type MocaRequestHandlerInterface interface {
+	HandleMocaRequest(w http.ResponseWriter, r *http.Request)
+}
+
+func RegisterRoutes(router Router, handler MocaRequestHandlerInterface) {
+	router.HandleFunc("POST /service", handler.HandleMocaRequest)
 }
 
 type MocaRequestHandler struct {
@@ -36,14 +40,15 @@ func NewMocaRequestHandler(lookup *ResponseLookup) *MocaRequestHandler {
 	}
 }
 
-func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
-	if c.GetHeader("Content-Type") != "application/moca-xml" {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", generateNoContentResponse())
+func (h *MocaRequestHandler) HandleMocaRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/moca-xml" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(generateNoContentResponse())
 		return
 	}
 	var request mocaprotocol.MocaRequest
-	if err := c.BindXML(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := xml.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -52,26 +57,26 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 		tokens := strings.SplitN(query, " where ", 2)
 		switch tokens[0] {
 		case "ping":
-			c.Data(http.StatusOK, "application/moca-xml", generatePingResponse())
+			writeMocaResponse(w, generatePingResponse())
 			return
 		case "login user":
-			h.handleLogin(c, tokens)
+			h.handleLogin(w, tokens)
 			return
 		case "logout user":
 			sessionKey, invalidKey := h.sessions.GetSessionKey(request)
 			if invalidKey != nil {
-				c.Data(http.StatusOK, "application/moca-xml", invalidKey)
+				writeMocaResponse(w, invalidKey)
 				return
 			}
 			h.sessions.Delete(sessionKey)
-			c.Data(http.StatusOK, "application/moca-xml", generatePingResponse())
+			writeMocaResponse(w, generatePingResponse())
 			return
 		}
 	}
 
 	_, invalidKey := h.sessions.GetSessionKey(request)
 	if invalidKey != nil {
-		c.Data(http.StatusOK, "application/moca-xml", invalidKey)
+		writeMocaResponse(w, invalidKey)
 		return
 	}
 	response := h.lookup.GetResponse(query)
@@ -83,22 +88,22 @@ func (h *MocaRequestHandler) HandleMocaRequest(c *gin.Context) {
 	if response.ResultSet != "" {
 		if err := xml.Unmarshal([]byte(response.ResultSet), &mocaResponse.MocaResults); err != nil {
 			h.logger.Error("error unmarshalling response", "error", err)
-			c.Status(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 	}
 	body, err := xml.Marshal(mocaResponse)
 	if err != nil {
 		h.logger.Error("error marshalling response", "error", err)
-		c.Status(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	c.Data(http.StatusOK, "application/moca-xml", append(XMLDeclaration, body...))
+	writeMocaResponse(w, append(XMLDeclaration, body...))
 }
 
-func (h *MocaRequestHandler) handleLogin(c *gin.Context, tokens []string) {
+func (h *MocaRequestHandler) handleLogin(w http.ResponseWriter, tokens []string) {
 	if len(tokens) < 2 {
-		c.Data(http.StatusOK, "application/moca-xml", generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
+		writeMocaResponse(w, generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
 		return
 	}
 	params := make(map[string]string)
@@ -112,10 +117,15 @@ func (h *MocaRequestHandler) handleLogin(c *gin.Context, tokens []string) {
 		}
 	}
 	if params["usr_pswd"] == "" {
-		c.Data(http.StatusOK, "application/moca-xml", generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
+		writeMocaResponse(w, generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
 		return
 	}
 	response, sessionKey := generateLoginResponse(params["usr_id"])
 	h.sessions.Add(sessionKey, params["usr_id"])
-	c.Data(http.StatusOK, "application/moca-xml", response)
+	writeMocaResponse(w, response)
+}
+
+func writeMocaResponse(w http.ResponseWriter, body []byte) {
+	w.Header().Set("Content-Type", "application/moca-xml")
+	w.Write(body)
 }

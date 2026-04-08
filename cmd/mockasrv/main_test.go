@@ -53,10 +53,10 @@ func Test_dataFolder(t *testing.T) {
 	})
 }
 
-func Test_router(t *testing.T) {
+func Test_buildMux(t *testing.T) {
 	t.Run("valid folder", func(t *testing.T) {
 		tempDir := t.TempDir()
-		_, err := router(&tempDir)
+		_, err := buildMux(&tempDir)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -64,7 +64,7 @@ func Test_router(t *testing.T) {
 
 	t.Run("invalid folder", func(t *testing.T) {
 		folderFlag := "/non/existent/folder"
-		_, err := router(&folderFlag)
+		_, err := buildMux(&folderFlag)
 		if err == nil {
 			t.Fatalf("expected error, got nil")
 		}
