@@ -97,6 +97,88 @@ func TestHandleMocaRequest_Login(t *testing.T) {
 				So(response.Message, ShouldEqual, "Missing argument: Password (usr_pswd)")
 			})
 		})
+
+		Convey("When I attempt to login wrapped in a publish data block", func() {
+
+			req := buildRequest(t, "publish data | { login user where usr_id = 'anyuser' and usr_pswd = 'anypass' }")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 0)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 14)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "anyuser")
+			})
+		})
+
+		Convey("When I attempt to login wrapped in a publish data block with a where clause", func() {
+
+			req := buildRequest(t, "publish data where ctx = 'login' | { login user where usr_id = 'anyuser' and usr_pswd = 'anypass' }")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 0)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 14)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "anyuser")
+			})
+		})
+
+		Convey("When I attempt to login wrapped in a publish data block spanning multiple lines", func() {
+
+			query := `publish data
+			          | {
+			              login user
+			                where usr_id   = 'anyuser'
+			                  and usr_pswd = 'anypass'
+			          }`
+			req := buildRequest(t, query)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 0)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 14)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "anyuser")
+			})
+		})
+
+		Convey("When I attempt to login wrapped in a publish data block without a password", func() {
+
+			query := `publish data
+			          | {
+			              login user where usr_id = 'anyuser'
+			          }`
+			req := buildRequest(t, query)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be an error about missing password", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 802)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+				So(response.Message, ShouldEqual, "Missing argument: Password (usr_pswd)")
+			})
+		})
 	})
 }
 

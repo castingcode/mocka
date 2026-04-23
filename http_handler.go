@@ -59,9 +59,6 @@ func (h *MocaRequestHandler) HandleMocaRequest(w http.ResponseWriter, r *http.Re
 		case "ping":
 			writeMocaResponse(w, generatePingResponse())
 			return
-		case "login user":
-			h.handleLogin(w, tokens)
-			return
 		case "logout user":
 			sessionKey, invalidKey := h.sessions.GetSessionKey(request)
 			if invalidKey != nil {
@@ -71,6 +68,11 @@ func (h *MocaRequestHandler) HandleMocaRequest(w http.ResponseWriter, r *http.Re
 			h.sessions.Delete(sessionKey)
 			writeMocaResponse(w, generatePingResponse())
 			return
+		default:
+			if inner, ok := loginInnerQuery(query); ok {
+				h.handleLogin(w, strings.SplitN(inner, " where ", 2))
+				return
+			}
 		}
 	}
 
@@ -128,4 +130,40 @@ func (h *MocaRequestHandler) handleLogin(w http.ResponseWriter, tokens []string)
 func writeMocaResponse(w http.ResponseWriter, body []byte) {
 	w.Header().Set("Content-Type", "application/moca-xml")
 	w.Write(body)
+}
+
+// isLoginCommand returns true if the query is a login user command, optionally
+// wrapped in a publish data block (with or without a where clause).
+func isLoginCommand(query string) bool {
+	_, ok := loginInnerQuery(query)
+	return ok
+}
+
+// loginInnerQuery returns the inner "login user ..." portion of the query if
+// the query is a login command (either bare or wrapped in a publish data
+// block, with or without a where clause). The second return value reports
+// whether the query is a login command.
+func loginInnerQuery(query string) (string, bool) {
+	normalizedQuery := normalizeQuery(query)
+
+	if strings.HasPrefix(normalizedQuery, "publish data") {
+		pipeIdx := strings.Index(normalizedQuery, "| {")
+		if pipeIdx < 0 {
+			return "", false
+		}
+		innerPart := strings.TrimSpace(normalizedQuery[pipeIdx+3:])
+		if !strings.HasSuffix(innerPart, "}") {
+			return "", false
+		}
+		inner := normalizeQuery(strings.TrimSuffix(innerPart, "}"))
+		if !strings.HasPrefix(inner, "login user") {
+			return "", false
+		}
+		return inner, true
+	}
+
+	if strings.HasPrefix(normalizedQuery, "login user") {
+		return normalizedQuery, true
+	}
+	return "", false
 }
