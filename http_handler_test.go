@@ -97,6 +97,88 @@ func TestHandleMocaRequest_Login(t *testing.T) {
 				So(response.Message, ShouldEqual, "Missing argument: Password (usr_pswd)")
 			})
 		})
+
+		Convey("When I attempt to login wrapped in a publish data block", func() {
+
+			req := buildRequest(t, "publish data | { login user where usr_id = 'anyuser' and usr_pswd = 'anypass' }")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 0)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 14)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "anyuser")
+			})
+		})
+
+		Convey("When I attempt to login wrapped in a publish data block with a where clause", func() {
+
+			req := buildRequest(t, "publish data where ctx = 'login' | { login user where usr_id = 'anyuser' and usr_pswd = 'anypass' }")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 0)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 14)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "anyuser")
+			})
+		})
+
+		Convey("When I attempt to login wrapped in a publish data block spanning multiple lines", func() {
+
+			query := `publish data
+			          | {
+			              login user
+			                where usr_id   = 'anyuser'
+			                  and usr_pswd = 'anypass'
+			          }`
+			req := buildRequest(t, query)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be OK with a session key", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 0)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 14)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 1)
+				So(response.MocaResults.Data.Rows[0].Fields[0].Value, ShouldEqual, "anyuser")
+			})
+		})
+
+		Convey("When I attempt to login wrapped in a publish data block without a password", func() {
+
+			query := `publish data
+			          | {
+			              login user where usr_id = 'anyuser'
+			          }`
+			req := buildRequest(t, query)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			Convey("Then the response should be an error about missing password", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				var response mocaprotocol.MocaResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &response)
+				So(err, ShouldBeNil)
+				So(response.Status, ShouldEqual, 802)
+				So(response.MocaResults.Metadata.Columns, ShouldHaveLength, 0)
+				So(response.MocaResults.Data.Rows, ShouldHaveLength, 0)
+				So(response.Message, ShouldEqual, "Missing argument: Password (usr_pswd)")
+			})
+		})
 	})
 }
 
@@ -518,6 +600,168 @@ func TestHandleMocaRequest_MalformedXMLBody(t *testing.T) {
 			Convey("Then the response should be 400 Bad Request", func() {
 				So(w.Code, ShouldEqual, http.StatusBadRequest)
 			})
+		})
+	})
+}
+
+func TestLoginInnerQuery(t *testing.T) {
+
+	Convey("loginInnerQuery", t, func() {
+
+		Convey("recognizes a bare login user command", func() {
+
+			Convey("with a where clause returns the normalized query", func() {
+				inner, ok := loginInnerQuery("login user where usr_id = 'anyuser' and usr_pswd = 'anypass'")
+				So(ok, ShouldBeTrue)
+				So(inner, ShouldEqual, "login user where usr_id = 'anyuser' and usr_pswd = 'anypass'")
+			})
+
+			Convey("without a where clause returns the normalized query", func() {
+				inner, ok := loginInnerQuery("login user")
+				So(ok, ShouldBeTrue)
+				So(inner, ShouldEqual, "login user")
+			})
+
+			Convey("normalizes whitespace and case", func() {
+				inner, ok := loginInnerQuery("  LOGIN   USER\n  WHERE  usr_id = 'ANYUSER'  ")
+				So(ok, ShouldBeTrue)
+				So(inner, ShouldEqual, "login user where usr_id = 'anyuser'")
+			})
+		})
+
+		Convey("recognizes a login user command wrapped in a publish data block", func() {
+
+			Convey("without a where clause on publish data", func() {
+				inner, ok := loginInnerQuery("publish data | { login user where usr_id = 'anyuser' and usr_pswd = 'anypass' }")
+				So(ok, ShouldBeTrue)
+				So(inner, ShouldEqual, "login user where usr_id = 'anyuser' and usr_pswd = 'anypass'")
+			})
+
+			Convey("with a where clause on publish data", func() {
+				inner, ok := loginInnerQuery("publish data where ctx = 'login' | { login user where usr_id = 'anyuser' and usr_pswd = 'anypass' }")
+				So(ok, ShouldBeTrue)
+				So(inner, ShouldEqual, "login user where usr_id = 'anyuser' and usr_pswd = 'anypass'")
+			})
+
+			Convey("spanning multiple lines with extra whitespace", func() {
+				query := `publish data
+				          | {
+				              login user
+				                where usr_id   = 'anyuser'
+				                  and usr_pswd = 'anypass'
+				          }`
+				inner, ok := loginInnerQuery(query)
+				So(ok, ShouldBeTrue)
+				So(inner, ShouldEqual, "login user where usr_id = 'anyuser' and usr_pswd = 'anypass'")
+			})
+
+			Convey("with no where clause on the inner login user", func() {
+				inner, ok := loginInnerQuery("publish data | { login user }")
+				So(ok, ShouldBeTrue)
+				So(inner, ShouldEqual, "login user")
+			})
+		})
+
+		Convey("does not recognize non-login queries", func() {
+
+			Convey("an unrelated local syntax command returns false", func() {
+				inner, ok := loginInnerQuery("list warehouses where wh_id = 'MHE'")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+
+			Convey("logout user is not a login command", func() {
+				inner, ok := loginInnerQuery("logout user")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+
+			Convey("a command that starts with 'login' but not 'login user' returns false", func() {
+				inner, ok := loginInnerQuery("login something else")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+
+			Convey("an empty query returns false", func() {
+				inner, ok := loginInnerQuery("")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+
+			Convey("a SQL statement returns false", func() {
+				inner, ok := loginInnerQuery("[select * from usr_mst]")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+		})
+
+		Convey("rejects malformed publish data blocks", func() {
+
+			Convey("publish data without a pipe-brace opener returns false", func() {
+				inner, ok := loginInnerQuery("publish data where ctx = 'login'")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+
+			Convey("publish data block with no closing brace returns false", func() {
+				inner, ok := loginInnerQuery("publish data | { login user where usr_id = 'anyuser'")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+
+			Convey("publish data block wrapping a non-login command returns false", func() {
+				inner, ok := loginInnerQuery("publish data | { list warehouses }")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+
+			Convey("publish data block wrapping logout user returns false", func() {
+				inner, ok := loginInnerQuery("publish data | { logout user }")
+				So(ok, ShouldBeFalse)
+				So(inner, ShouldEqual, "")
+			})
+		})
+	})
+}
+
+func TestIsLoginCommand(t *testing.T) {
+
+	Convey("isLoginCommand", t, func() {
+
+		Convey("returns true for a bare login user command", func() {
+			So(isLoginCommand("login user where usr_id = 'anyuser' and usr_pswd = 'anypass'"), ShouldBeTrue)
+		})
+
+		Convey("returns true for a login user command wrapped in publish data", func() {
+			So(isLoginCommand("publish data | { login user where usr_id = 'anyuser' and usr_pswd = 'anypass' }"), ShouldBeTrue)
+		})
+
+		Convey("returns true for a login user command wrapped in publish data with a where clause", func() {
+			So(isLoginCommand("publish data where ctx = 'login' | { login user where usr_id = 'anyuser' }"), ShouldBeTrue)
+		})
+
+		Convey("returns true regardless of casing and whitespace", func() {
+			So(isLoginCommand("  LOGIN   USER  WHERE  usr_id = 'U'  "), ShouldBeTrue)
+		})
+
+		Convey("returns false for an unrelated command", func() {
+			So(isLoginCommand("list warehouses"), ShouldBeFalse)
+		})
+
+		Convey("returns false for logout user", func() {
+			So(isLoginCommand("logout user"), ShouldBeFalse)
+		})
+
+		Convey("returns false for a malformed publish data block", func() {
+			So(isLoginCommand("publish data | { login user"), ShouldBeFalse)
+		})
+
+		Convey("returns false for a publish data block wrapping a non-login command", func() {
+			So(isLoginCommand("publish data | { list warehouses }"), ShouldBeFalse)
+		})
+
+		Convey("returns false for an empty query", func() {
+			So(isLoginCommand(""), ShouldBeFalse)
 		})
 	})
 }
