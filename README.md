@@ -3,6 +3,7 @@
 [![Tests](https://github.com/castingcode/mocka/actions/workflows/test.yml/badge.svg)](https://github.com/castingcode/mocka/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/castingcode/mocka/graph/badge.svg?token=C7EUFCEHED)](https://codecov.io/gh/castingcode/mocka)
 [![Go Report Card](https://goreportcard.com/badge/github.com/castingcode/mocka)](https://goreportcard.com/report/github.com/castingcode/mocka)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/castingcode/mocka/badge)](https://scorecard.dev/viewer/?uri=github.com/castingcode/mocka)
 
 Mocka is an HTTP server that accepts MOCA protocol requests and returns canned responses. It is designed for testing code that talks to a BlueYonder WMS MOCA server without needing a real server present.
 
@@ -178,10 +179,16 @@ Result XML files should contain a `<moca-results>` fragment. See [Result file fo
 
 ### Installation
 
-Download a pre-built binary from the [releases page](https://github.com/castingcode/mocka/releases), or build from source:
+Download a pre-built binary from the [releases page](https://github.com/castingcode/mocka/releases), build from source:
 
 ```sh
 go install github.com/castingcode/mocka/cmd/mockasrv@latest
+```
+
+or run via Docker:
+
+```sh
+docker run -p 9000:9000 -v ./responses:/responses castingcode/mocka
 ```
 
 ### Flags
