@@ -3,3 +3,8 @@ coverage.html
 samples/
 # Added by goreleaser init:
 dist/
+
+# ignore locally plan files
+.plans/
+
+
