@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+.plans
+dist/
+docs/
+samples/
+testdata/
+coverage.out
+coverage.html
+*.md
+Taskfile.yml
+codecov.yaml
+.goreleaser.yaml

@@ -1,0 +1,7 @@
+responses:
+  - match:
+      type: exact
+      query: "list warehouses where wh_id = 'MHE'"
+    response:
+      status: 0
+      results: list-warehouses-mhe.xml
