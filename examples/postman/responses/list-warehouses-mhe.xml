@@ -1,0 +1,12 @@
+<moca-results>
+    <metadata>
+        <column name="wh_id" type="S" length="10" nullable="false"/>
+        <column name="wh_name" type="S" length="40" nullable="true"/>
+    </metadata>
+    <data>
+        <row>
+            <field>MHE</field>
+            <field>Main Warehouse</field>
+        </row>
+    </data>
+</moca-results>

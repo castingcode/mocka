@@ -1,0 +1,239 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Mocka MOCA Server",
+    "description": "Exercises the built-in ping, login, and logout commands plus a registered MOCA query against a running mockasrv instance.\n\nRun the requests in order:\n1. Ping — no session required\n2. Login — saves the session key to a collection variable\n3. List Warehouses — requires the session key from login\n4. Logout — ends the session",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4500"
+    },
+    {
+      "key": "userId",
+      "value": "demo"
+    },
+    {
+      "key": "password",
+      "value": "demo"
+    },
+    {
+      "key": "sessionKey",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Ping",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = xml2Json(pm.response.text());",
+              "const root = json['moca-response'];",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('MOCA status 0', () => pm.expect(root.status).to.eql('0'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/moca-xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<moca-request autocommit=\"true\">\n  <environment></environment>\n  <query><![CDATA[ping]]></query>\n</moca-request>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/service",
+        "description": "Built-in health check. No session key required."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "function fieldValue(field) {",
+              "    if (typeof field === 'string') return field;",
+              "    if (field && field._text !== undefined) return field._text;",
+              "    if (field && field['#text'] !== undefined) return field['#text'];",
+              "    return '';",
+              "}",
+              "",
+              "const json = xml2Json(pm.response.text());",
+              "const root = json['moca-response'];",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('MOCA status 0', () => pm.expect(root.status).to.eql('0'));",
+              "",
+              "const columns = root['moca-results'].metadata.column;",
+              "const row = root['moca-results'].data.row;",
+              "const cols = Array.isArray(columns) ? columns : [columns];",
+              "const fields = Array.isArray(row.field) ? row.field : [row.field];",
+              "",
+              "const idx = cols.findIndex(c => (c['@name'] || c.name) === 'session_key');",
+              "pm.test('session_key column present', () => pm.expect(idx).to.be.at.least(0));",
+              "",
+              "const sessionKey = fieldValue(fields[idx]);",
+              "pm.collectionVariables.set('sessionKey', sessionKey);",
+              "console.log('Saved sessionKey:', sessionKey);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/moca-xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<moca-request autocommit=\"true\">\n  <environment></environment>\n  <query><![CDATA[login user where usr_id = '{{userId}}' and usr_pswd = '{{password}}']]></query>\n</moca-request>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/service",
+        "description": "Built-in login. Any username and password are accepted as long as usr_pswd is present. The test script saves the returned session_key to the collection variable `sessionKey`."
+      },
+      "response": []
+    },
+    {
+      "name": "3. List Warehouses",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const sessionKey = pm.collectionVariables.get('sessionKey');",
+              "if (!sessionKey) {",
+              "    throw new Error('sessionKey is empty — run \"2. Login\" first.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = xml2Json(pm.response.text());",
+              "const root = json['moca-response'];",
+              "const row = root['moca-results'].data.row;",
+              "const fields = Array.isArray(row.field) ? row.field : [row.field];",
+              "",
+              "function fieldValue(field) {",
+              "    if (typeof field === 'string') return field;",
+              "    if (field && field._text !== undefined) return field._text;",
+              "    if (field && field['#text'] !== undefined) return field['#text'];",
+              "    return '';",
+              "}",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('MOCA status 0', () => pm.expect(root.status).to.eql('0'));",
+              "pm.test('warehouse id is MHE', () => pm.expect(fieldValue(fields[0])).to.eql('MHE'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/moca-xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<moca-request autocommit=\"true\">\n  <environment>\n    <var name=\"SESSION_KEY\" value=\"{{sessionKey}}\"></var>\n  </environment>\n  <query><![CDATA[list warehouses where wh_id = 'MHE']]></query>\n</moca-request>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/service",
+        "description": "Registered response from responses/responses.yml. Requires a valid session key from login."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Logout",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const sessionKey = pm.collectionVariables.get('sessionKey');",
+              "if (!sessionKey) {",
+              "    throw new Error('sessionKey is empty — run \"2. Login\" first.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = xml2Json(pm.response.text());",
+              "const root = json['moca-response'];",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('MOCA status 0', () => pm.expect(root.status).to.eql('0'));",
+              "",
+              "pm.collectionVariables.unset('sessionKey');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/moca-xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<moca-request autocommit=\"true\">\n  <environment>\n    <var name=\"SESSION_KEY\" value=\"{{sessionKey}}\"></var>\n  </environment>\n  <query><![CDATA[logout user]]></query>\n</moca-request>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/service",
+        "description": "Built-in logout. Destroys the session identified by SESSION_KEY."
+      },
+      "response": []
+    }
+  ]
+}
