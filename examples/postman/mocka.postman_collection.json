@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Mocka MOCA Server",
-    "description": "Exercises the built-in ping, login, and logout commands plus a registered MOCA query against a running mockasrv instance.\n\nRun the requests in order:\n1. Ping — no session required\n2. Login — saves the session key to a collection variable\n3. List Warehouses — requires the session key from login\n4. Logout — ends the session",
+    "description": "Exercises the built-in ping, login, and logout commands and a registered MOCA query against a running mockasrv instance. The admin endpoints are in the separate \"Mocka Admin API\" collection.\n\nRun the requests in order:\n1. Ping — no session required\n2. Login — saves the session key to a collection variable\n3. List Warehouses — requires the session key from login\n4. Unregistered Command — returns 501 and is logged as unmatched\n5. Logout — ends the session",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -89,7 +89,7 @@
               "const cols = Array.isArray(columns) ? columns : [columns];",
               "const fields = Array.isArray(row.field) ? row.field : [row.field];",
               "",
-              "const idx = cols.findIndex(c => (c['@name'] || c.name) === 'session_key');",
+              "const idx = cols.findIndex(c => ((c.$ && c.$.name) || c['@name'] || c.name) === 'session_key');",
               "pm.test('session_key column present', () => pm.expect(idx).to.be.at.least(0));",
               "",
               "const sessionKey = fieldValue(fields[idx]);",
@@ -183,7 +183,58 @@
       "response": []
     },
     {
-      "name": "4. Logout",
+      "name": "4. Unregistered Command",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const sessionKey = pm.collectionVariables.get('sessionKey');",
+              "if (!sessionKey) {",
+              "    throw new Error('sessionKey is empty — run \"2. Login\" first.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = xml2Json(pm.response.text());",
+              "const root = json['moca-response'];",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('MOCA status 501 (command not found)', () => pm.expect(root.status).to.eql('501'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/moca-xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<moca-request autocommit=\"true\">\n  <environment>\n    <var name=\"SESSION_KEY\" value=\"{{sessionKey}}\"></var>\n  </environment>\n  <query><![CDATA[list carriers where carcod = 'UPS']]></query>\n</moca-request>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/service",
+        "description": "A command with no entry in responses.yml. Mocka returns MOCA status 501 and logs it as unmatched, so it shows up in \"4. List Unmatched Requests\" in the admin collection."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Logout",
       "event": [
         {
           "listen": "prerequest",

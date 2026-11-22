@@ -1,0 +1,185 @@
+{
+  "info": {
+    "_postman_id": "0128f90b-bb2c-46ab-9a39-c603e968a750",
+    "name": "Mocka Admin API",
+    "description": "Exercises the JSON admin endpoints under /_mocka/ on a running mockasrv instance. They need no session key.\n\nRun the \"Mocka MOCA Server\" collection first so the request log has entries, then run these in order:\n1. Match Query — shows which entry a query matches and the response it gets\n2. Match Query (JSON, no match) — the same endpoint with a JSON body\n3. List Requests — the requests received so far and what handled each one\n4. List Unmatched Requests — only the queries with no registered response\n5. Clear Request Log — empties the log",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4500"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Match Query",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('query is normalized', () => pm.expect(json.normalized_query).to.eql(\"list warehouses where wh_id = 'mhe'\"));",
+              "pm.test('matches the exact entry in responses.yml', () => {",
+              "    pm.expect(json.match.type).to.eql('exact');",
+              "    pm.expect(json.match.source).to.eql('responses.yml entry 1');",
+              "});",
+              "pm.test('returns the canned response', () => {",
+              "    pm.expect(json.response.status).to.eql(0);",
+              "    pm.expect(json.response.results).to.include('<moca-results>');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "text/plain"
+          }
+        ],
+        "url": "{{baseUrl}}/_mocka/match",
+        "description": "Shows how a query would be handled without sending a MOCA request. The body is the query text; case, whitespace, and quote style are normalized the same way as for /service.",
+        "body": {
+          "mode": "raw",
+          "raw": "LIST Warehouses\n  where wh_id = \"MHE\"",
+          "options": {
+            "raw": {
+              "language": "text"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Match Query (JSON, no match)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('nothing matches', () => pm.expect(json.match).to.be.null);",
+              "pm.test('response is command not found', () => pm.expect(json.response.status).to.eql(501));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/_mocka/match",
+        "description": "The same endpoint with a JSON body. When nothing matches, match is null and response shows the 501 a client would receive.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"list carriers where carcod = 'UPS'\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. List Requests",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "const records = json.requests;",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('the log has requests (run the \"Mocka MOCA Server\" collection first)', () => pm.expect(records).to.not.be.empty);",
+              "pm.test('login was handled as a built-in command', () => {",
+              "    pm.expect(records.some(r => r.match && r.match.type === 'builtin' && r.match.command === 'login')).to.be.true;",
+              "});",
+              "pm.test('list warehouses matched responses.yml entry 1', () => {",
+              "    const rec = records.filter(r => r.normalized_query === \"list warehouses where wh_id = 'mhe'\").pop(); // most recent",
+              "    pm.expect(rec, 'list warehouses request').to.exist;",
+              "    pm.expect(rec.match.source).to.eql('responses.yml entry 1');",
+              "    pm.expect(rec.unmatched).to.be.false;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/_mocka/requests",
+        "description": "The MOCA requests received so far, oldest first, with the status and what handled each one (a registered entry, a built-in command, or null). Run the \"Mocka MOCA Server\" collection first so the log has requests to show."
+      },
+      "response": []
+    },
+    {
+      "name": "4. List Unmatched Requests",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "const records = json.requests;",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('the log has requests (run the \"Mocka MOCA Server\" collection first)', () => pm.expect(records).to.not.be.empty);",
+              "pm.test('every record is unmatched', () => pm.expect(records.every(r => r.unmatched && r.status === 501)).to.be.true);",
+              "pm.test('includes the unregistered command', () => {",
+              "    pm.expect(records.map(r => r.normalized_query)).to.include(\"list carriers where carcod = 'ups'\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/_mocka/requests?unmatched=true",
+        "description": "Only the queries that no registered response matched: the list of entries to add to responses.yml. After the MOCA collection, this includes its \"4. Unregistered Command\"."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Clear Request Log",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/_mocka/requests",
+        "description": "Empties the request log, for example between test runs."
+      },
+      "response": []
+    }
+  ]
+}

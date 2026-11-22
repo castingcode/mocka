@@ -42,3 +42,39 @@ jobs:
           files: ./coverage.out
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  postman:
+    name: Run Postman Collections
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Start mockasrv
+        run: |
+          go build -o mockasrv ./cmd/mockasrv
+          ./mockasrv -folder examples/postman/responses > mockasrv.log 2>&1 &
+          curl --silent --output /dev/null --retry 30 --retry-delay 1 --retry-connrefused http://localhost:4500/_mocka/requests
+
+      # The admin collection checks the request log the MOCA collection fills,
+      # so the order matters.
+      - name: Run MOCA collection
+        run: npx --yes newman@6 run examples/postman/mocka.postman_collection.json
+
+      - name: Run admin collection
+        run: npx --yes newman@6 run examples/postman/mocka-admin.postman_collection.json
+
+      - name: Show mockasrv log
+        if: failure()
+        run: cat mockasrv.log
