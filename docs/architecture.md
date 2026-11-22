@@ -23,7 +23,7 @@ by file rather than by sub-package:
 | File | Responsibility |
 |---|---|
 | `http_handler.go` | HTTP routing, `Router` interface, built-in command handling (ping, login, logout) |
-| `admin_handler.go` | Admin endpoints under `/_mocka/` (match explanation, request log) and `RegisterAdminRoutes` |
+| `admin_handler.go` | Admin endpoints under `/_mocka/` (match explanation, request log, runtime responses, reload) and `RegisterAdminRoutes` |
 | `registry.go` | `ResponseLookup` — resolves normalized queries to responses |
 | `matcher.go` | Query matching hierarchy (`matchQuery`) |
 | `query.go` | Query normalization (`normalizeQuery`) |
@@ -80,12 +80,25 @@ follows the standard `net/http` handler signature.
 | `POST /_mocka/match` | Resolve a query (plain-text body, or `{"query": ...}` as JSON) and report the matched entry, its `Source`, and the response. Built-in commands are reported as `builtin`. No session needed; not logged. |
 | `GET /_mocka/requests` | The request log, oldest first; `?unmatched=true` keeps only queries no registered entry matched |
 | `DELETE /_mocka/requests` | Clear the request log |
+| `GET /_mocka/responses` | The registered entries in match order, each with its `id` and `Source` |
+| `POST /_mocka/responses` | Register an entry from JSON (`match` as in the response files, `response.results` as XML); an entry with the same match key is replaced in place |
+| `DELETE /_mocka/responses/{id}` | Remove an entry |
+| `POST /_mocka/reload` | Reload entries from the `ResponseLoader`, discarding runtime entries; on error the current entries are kept |
 
 The handler logs every MOCA request it decodes (query, normalized query, status,
 what handled it) in a mutex-guarded slice capped at the most recent 1000 records,
 because the HTTP server calls it from concurrent goroutines. `Requests()` and
 `ClearRequests()` expose the log to Go callers. `FileResponseLoader` sets
-`Entry.Source` to the defining file and entry number; in-memory entries leave it empty.
+`Entry.Source` to the defining file and entry number; in-memory entries leave it empty,
+and runtime entries use `admin API`.
+
+Because the admin API changes entries at runtime, `ResponseLookup` keeps them behind
+an `RWMutex`, keeps its `ResponseLoader` for reloads, and assigns each entry an
+unexported `id` from a counter that is never reset, so ids stay unique across
+reloads. It clones what the loader returns, so runtime changes never write into a
+loader's own slice. Runtime entries are not persisted: a reload or restart returns
+to what the loader provides. File and runtime entries share validation through
+`matchEntry`, and duplicates are detected with the same match key the file loader uses.
 
 ## Response Loaders
 

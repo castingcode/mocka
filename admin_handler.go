@@ -2,12 +2,16 @@ package mocka
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/castingcode/mocaprotocol"
 )
 
 // maxRequestRecords caps the request log so a long-running server does not
@@ -20,6 +24,10 @@ type AdminHandlerInterface interface {
 	HandleMatch(w http.ResponseWriter, r *http.Request)
 	HandleListRequests(w http.ResponseWriter, r *http.Request)
 	HandleClearRequests(w http.ResponseWriter, r *http.Request)
+	HandleListResponses(w http.ResponseWriter, r *http.Request)
+	HandlePutResponse(w http.ResponseWriter, r *http.Request)
+	HandleDeleteResponse(w http.ResponseWriter, r *http.Request)
+	HandleReload(w http.ResponseWriter, r *http.Request)
 }
 
 var _ AdminHandlerInterface = (*MocaRequestHandler)(nil)
@@ -29,12 +37,17 @@ func RegisterAdminRoutes(router Router, handler AdminHandlerInterface) {
 	router.HandleFunc("POST /_mocka/match", handler.HandleMatch)
 	router.HandleFunc("GET /_mocka/requests", handler.HandleListRequests)
 	router.HandleFunc("DELETE /_mocka/requests", handler.HandleClearRequests)
+	router.HandleFunc("GET /_mocka/responses", handler.HandleListResponses)
+	router.HandleFunc("POST /_mocka/responses", handler.HandlePutResponse)
+	router.HandleFunc("DELETE /_mocka/responses/{id}", handler.HandleDeleteResponse)
+	router.HandleFunc("POST /_mocka/reload", handler.HandleReload)
 }
 
 // MatchInfo describes what handled a query: a registered entry, or one of the
 // built-in commands.
 type MatchInfo struct {
-	Type    string            `json:"type"` // exact, publish_data, prefix, or builtin
+	ID      int               `json:"id,omitempty"` // identifies a registered entry, e.g. for DELETE /_mocka/responses/{id}
+	Type    string            `json:"type"`         // exact, publish_data, prefix, or builtin
 	Query   string            `json:"query,omitempty"`
 	Inner   string            `json:"inner,omitempty"`
 	Context map[string]string `json:"context,omitempty"`
@@ -58,6 +71,7 @@ func matchInfo(e *Entry) *MatchInfo {
 		return nil
 	}
 	return &MatchInfo{
+		ID:      e.id,
 		Type:    string(e.MatchType),
 		Query:   e.Query,
 		Inner:   e.Inner,
@@ -114,7 +128,20 @@ type matchResult struct {
 type matchResponse struct {
 	Status  int    `json:"status"`
 	Message string `json:"message,omitempty"`
-	Results string `json:"results,omitempty"`
+	Results string `json:"results,omitempty"` // the <moca-results> XML itself, not a file path
+}
+
+// responseView is a registered entry as the admin API shows and accepts it.
+type responseView struct {
+	Match    *MatchInfo    `json:"match"`
+	Response matchResponse `json:"response"`
+}
+
+func newResponseView(e Entry) responseView {
+	return responseView{
+		Match:    matchInfo(&e),
+		Response: matchResponse{Status: e.StatusCode, Message: e.Message, Results: e.ResultSet},
+	}
 }
 
 // HandleMatch reports how a query would be handled, without needing a session.
@@ -180,6 +207,92 @@ func (h *MocaRequestHandler) HandleListRequests(w http.ResponseWriter, r *http.R
 func (h *MocaRequestHandler) HandleClearRequests(w http.ResponseWriter, _ *http.Request) {
 	h.journal.clear()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleListResponses returns the registered entries in match order as
+// {"responses": [...]}.
+func (h *MocaRequestHandler) HandleListResponses(w http.ResponseWriter, _ *http.Request) {
+	entries := h.lookup.list()
+	views := make([]responseView, 0, len(entries))
+	for _, e := range entries {
+		views = append(views, newResponseView(e))
+	}
+	h.writeJSON(w, http.StatusOK, struct {
+		Responses []responseView `json:"responses"`
+	}{views})
+}
+
+// HandlePutResponse registers a response from a JSON body with the same match
+// fields as the response files, and the result XML itself in
+// response.results. An entry that matches the same queries is replaced in
+// place (200); otherwise the entry is added (201). Runtime entries last until
+// they are deleted or the responses are reloaded.
+func (h *MocaRequestHandler) HandlePutResponse(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Match    matchSpec     `json:"match"`
+		Response matchResponse `json:"response"`
+	}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("parsing JSON body: %v", err), http.StatusBadRequest)
+		return
+	}
+	e, err := matchEntry(req.Match, nil)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid match: %v", err), http.StatusBadRequest)
+		return
+	}
+	e.StatusCode = req.Response.Status
+	e.Message = req.Response.Message
+	e.ResultSet = strings.TrimSpace(req.Response.Results)
+	if e.ResultSet != "" {
+		var probe mocaprotocol.MocaResponse
+		if err := xml.Unmarshal([]byte(e.ResultSet), &probe.MocaResults); err != nil {
+			http.Error(w, fmt.Sprintf("invalid response.results XML: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+	e.Source = "admin API"
+
+	stored, replaced := h.lookup.put(e)
+	h.logger.Info("response registered", "id", stored.id, "type", stored.MatchType, "replaced", replaced)
+	status := http.StatusCreated
+	if replaced {
+		status = http.StatusOK
+	}
+	h.writeJSON(w, status, newResponseView(stored))
+}
+
+// HandleDeleteResponse removes the registered entry with the id in the path.
+func (h *MocaRequestHandler) HandleDeleteResponse(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid id %q", r.PathValue("id")), http.StatusBadRequest)
+		return
+	}
+	if err := h.lookup.remove(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	h.logger.Info("response removed", "id", id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleReload reloads the responses from the loader, such as the response
+// files, discarding runtime entries. If loading fails, the current entries
+// are kept and the error is returned.
+func (h *MocaRequestHandler) HandleReload(w http.ResponseWriter, _ *http.Request) {
+	if err := h.lookup.reload(); err != nil {
+		h.logger.Warn("reloading responses failed; keeping the current responses", "error", err)
+		http.Error(w, fmt.Sprintf("reloading responses: %v; the current responses were kept", err), http.StatusInternalServerError)
+		return
+	}
+	count := len(h.lookup.list())
+	h.logger.Info("responses reloaded", "count", count)
+	h.writeJSON(w, http.StatusOK, struct {
+		Count int `json:"count"`
+	}{count})
 }
 
 func (h *MocaRequestHandler) writeJSON(w http.ResponseWriter, status int, v any) {

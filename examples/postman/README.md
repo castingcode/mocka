@@ -16,7 +16,12 @@ This directory contains two [Postman](https://www.postman.com/) collections for 
 2. **Match Query (JSON, no match)** — the same endpoint with a JSON body, for a query nothing matches
 3. **List Requests** — the requests received so far and what handled each one
 4. **List Unmatched Requests** — only the queries with no registered response (request 4 of the MOCA collection)
-5. **Clear Request Log** — empties the log
+5. **List Responses** — the registered responses with their ids
+6. **Register Response** — adds a response at runtime for the command request 4 sent
+7. **Match Registered Query** — that command now matches the new response
+8. **Delete Response** — removes it by id
+9. **Reload Responses** — re-reads `responses.yml` and drops runtime entries
+10. **Clear Request Log** — empties the log
 
 Run the MOCA collection first: requests 3 and 4 of the admin collection check the log it fills.
 
@@ -105,7 +110,7 @@ Then set the collection variable `baseUrl` to `http://localhost:8080`.
 1. Open Postman.
 2. **Import** → select [`mocka.postman_collection.json`](mocka.postman_collection.json) and [`mocka-admin.postman_collection.json`](mocka-admin.postman_collection.json).
 3. Confirm the collection variable `baseUrl` is `http://localhost:4500` (or your chosen port) in both collections.
-4. With `mockasrv` running, execute the **Mocka MOCA Server** requests **in order** (1 → 5), then the **Mocka Admin API** requests (1 → 5).
+4. With `mockasrv` running, execute the **Mocka MOCA Server** requests **in order** (1 → 5), then the **Mocka Admin API** requests (1 → 10).
 
 The **Login** request saves the returned `session_key` to the `sessionKey` collection variable. Requests 3 to 5 use that value automatically. The admin requests need no session. If you skip login or restart the server, run **Login** again before continuing.
 

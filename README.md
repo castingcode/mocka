@@ -357,7 +357,7 @@ curl -s localhost:4500/_mocka/match -d "LIST warehouses where wh_id = 'MHE'"
 }
 ```
 
-`match` is `null` when nothing matches; `response` then shows the `501` the client would receive. Built-in commands report `{"type": "builtin", "command": "login"}` and no `response`.
+`match` is `null` when nothing matches; `response` then shows the `501` the client would receive. Built-in commands report `{"type": "builtin", "command": "login"}` and no `response`. For a registered entry, `match.id` is the id the endpoints below use.
 
 ### `GET /_mocka/requests` — see what was received
 
@@ -372,6 +372,31 @@ curl -s "localhost:4500/_mocka/requests?unmatched=true"
 ### `DELETE /_mocka/requests` — clear the log
 
 Returns `204`. Useful between tests.
+
+### `GET /_mocka/responses` — list registered responses
+
+Returns `{"responses": [...]}` in match order. Each item has the same `match` (with `id` and `source`) and `response` shape as `/_mocka/match`.
+
+### `POST /_mocka/responses` — register a response at runtime
+
+Lets a test add or override a response without editing files. `match` takes the same fields as `responses.yml` (except `query_file`); `response.results` is the `<moca-results>` XML itself, not a file path:
+
+```sh
+curl -s localhost:4500/_mocka/responses -H 'Content-Type: application/json' -d '{
+  "match": {"type": "exact", "query": "list carriers where carcod = '"'UPS'"'"},
+  "response": {"status": 0, "results": "<moca-results><metadata>...</metadata><data>...</data></moca-results>"}
+}'
+```
+
+The entry is validated the same way as the response files, and the result XML must parse. If an entry already matches the same queries (the same exact query, prefix, or publish_data inner and context), it is replaced in place and the request returns `200`; otherwise the entry is added and the request returns `201`. Both return the stored entry, whose `match.id` you can delete later. Runtime entries have `"source": "admin API"` and last until they are deleted or the responses are reloaded.
+
+### `DELETE /_mocka/responses/{id}` — remove a response
+
+Returns `204`, or `404` when no entry has that id. File entries can be removed too, until the next reload.
+
+### `POST /_mocka/reload` — reload the response files
+
+Re-reads `responses.yml` and `responses.d/`, discarding runtime entries, and returns `{"count": N}`. Edit the files and reload instead of restarting the server. If the files are invalid, the request returns `500` with the error and the current responses are kept. Ids are never reused, so an id from before a reload never refers to a different entry.
 
 In Go, `handler.Requests()` and `handler.ClearRequests()` give the same access without HTTP, for example to assert which queries your code sent:
 

@@ -37,6 +37,8 @@ type Entry struct {
 	Message    string
 	ResultSet  string // pre-loaded XML content
 	Source     string // where the entry is defined, such as "responses.yml entry 2"; empty for in-memory entries
+
+	id int // assigned by ResponseLookup; identifies the entry in the admin API
 }
 
 func (e *Entry) response() Response {

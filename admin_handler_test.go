@@ -3,6 +3,7 @@ package mocka
 import (
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +15,7 @@ import (
 
 // newAdminTestServer returns a mux with the MOCA and admin routes, backed by a
 // responses.yml with an exact entry and a prefix entry.
-func newAdminTestServer(t *testing.T) (*http.ServeMux, *MocaRequestHandler) {
+func newAdminTestServer(t *testing.T) (*http.ServeMux, *MocaRequestHandler, string) {
 	t.Helper()
 	dir := t.TempDir()
 	writeTestFile(t, dir, "wh.xml", `<moca-results><metadata/><data/></moca-results>`)
@@ -33,7 +34,7 @@ responses:
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, handler)
 	RegisterAdminRoutes(mux, handler)
-	return mux, handler
+	return mux, handler, dir
 }
 
 func postMatch(mux *http.ServeMux, contentType, body string) (*httptest.ResponseRecorder, matchResult) {
@@ -51,7 +52,7 @@ func postMatch(mux *http.ServeMux, contentType, body string) (*httptest.Response
 func TestAdmin_Match(t *testing.T) {
 
 	Convey("Given a server with an exact and a prefix entry", t, func() {
-		mux, handler := newAdminTestServer(t)
+		mux, handler, _ := newAdminTestServer(t)
 
 		Convey("When I match a query that differs only in case and whitespace from the exact entry", func() {
 			w, result := postMatch(mux, "text/plain", "LIST warehouses\n  where wh_id = \"MHE\"")
@@ -121,7 +122,7 @@ func TestAdmin_Match(t *testing.T) {
 func TestAdmin_Requests(t *testing.T) {
 
 	Convey("Given a server that has received several MOCA requests", t, func() {
-		mux, handler := newAdminTestServer(t)
+		mux, handler, _ := newAdminTestServer(t)
 
 		send := func(query string, options ...TestRequestOption) mocaprotocol.MocaResponse {
 			w := httptest.NewRecorder()
@@ -207,6 +208,193 @@ func TestAdmin_Requests(t *testing.T) {
 			So(records, ShouldHaveLength, maxRequestRecords)
 			So(records[0].Status, ShouldEqual, 5)
 			So(records[len(records)-1].Status, ShouldEqual, maxRequestRecords+4)
+		})
+	})
+}
+
+// adminDo sends an admin request and returns the recorder.
+func adminDo(mux *http.ServeMux, method, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	return w
+}
+
+func listResponses(t *testing.T, mux *http.ServeMux) []responseView {
+	t.Helper()
+	var body struct {
+		Responses []responseView `json:"responses"`
+	}
+	if err := json.Unmarshal(adminDo(mux, "GET", "/_mocka/responses", "").Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	return body.Responses
+}
+
+func TestAdmin_Responses(t *testing.T) {
+
+	Convey("Given a server loaded from responses.yml", t, func() {
+		mux, _, dir := newAdminTestServer(t)
+		resolve := func(query string) matchResult {
+			_, result := postMatch(mux, "", query)
+			return result
+		}
+
+		Convey("When I list the responses", func() {
+			views := listResponses(t, mux)
+
+			Convey("Then each file entry is shown in match order with an id and its source", func() {
+				So(views, ShouldHaveLength, 2)
+				So(views[0].Match.Type, ShouldEqual, "exact")
+				So(views[0].Match.Source, ShouldEqual, "responses.yml entry 1")
+				So(views[0].Response.Results, ShouldContainSubstring, "<moca-results>")
+				So(views[1].Match.Prefix, ShouldEqual, "list warehouses")
+				So(views[0].Match.ID, ShouldBeGreaterThan, 0)
+				So(views[1].Match.ID, ShouldNotEqual, views[0].Match.ID)
+			})
+		})
+
+		Convey("When I register a new response", func() {
+			w := adminDo(mux, "POST", "/_mocka/responses", `{
+				"match": {"type": "exact", "query": "LIST  Users"},
+				"response": {"status": 0, "results": "<moca-results><metadata/><data/></moca-results>"}
+			}`)
+			var view responseView
+			_ = json.Unmarshal(w.Body.Bytes(), &view)
+
+			Convey("Then it is created, normalized, and queries resolve to it", func() {
+				So(w.Code, ShouldEqual, http.StatusCreated)
+				So(view.Match.Query, ShouldEqual, "list users")
+				So(view.Match.Source, ShouldEqual, "admin API")
+				So(listResponses(t, mux), ShouldHaveLength, 3)
+				result := resolve("list users")
+				So(result.Match.ID, ShouldEqual, view.Match.ID)
+				So(result.Response.Status, ShouldEqual, StatusOK)
+			})
+
+			Convey("And I delete it by id", func() {
+				del := adminDo(mux, "DELETE", fmt.Sprintf("/_mocka/responses/%d", view.Match.ID), "")
+
+				Convey("Then it is gone and the query no longer matches", func() {
+					So(del.Code, ShouldEqual, http.StatusNoContent)
+					So(listResponses(t, mux), ShouldHaveLength, 2)
+					So(resolve("list users").Match, ShouldBeNil)
+				})
+
+				Convey("Then deleting it again is not found", func() {
+					again := adminDo(mux, "DELETE", fmt.Sprintf("/_mocka/responses/%d", view.Match.ID), "")
+					So(again.Code, ShouldEqual, http.StatusNotFound)
+				})
+			})
+		})
+
+		Convey("When I register a response that matches the same query as a file entry", func() {
+			before := listResponses(t, mux)
+			w := adminDo(mux, "POST", "/_mocka/responses", `{
+				"match": {"type": "exact", "query": "list warehouses where wh_id = \"mhe\""},
+				"response": {"status": 511, "message": "Database Error"}
+			}`)
+			after := listResponses(t, mux)
+
+			Convey("Then it replaces the file entry in place with a new id", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				So(after, ShouldHaveLength, 2)
+				So(after[0].Match.Source, ShouldEqual, "admin API")
+				So(after[0].Match.ID, ShouldNotEqual, before[0].Match.ID)
+				So(after[1].Match.ID, ShouldEqual, before[1].Match.ID)
+				result := resolve("list warehouses where wh_id = 'MHE'")
+				So(result.Response.Status, ShouldEqual, StatusDBError)
+				So(result.Response.Message, ShouldEqual, "Database Error")
+			})
+		})
+
+		Convey("When I register an invalid response", func() {
+			cases := []struct{ name, body, wantErr string }{
+				{"an unknown match type", `{"match": {"type": "exat", "query": "a"}}`, `unknown match type "exat"`},
+				{"a misspelled field", `{"match": {"type": "exact", "querry": "a"}}`, `unknown field "querry"`},
+				{"a query_file", `{"match": {"type": "exact", "query_file": "q.txt"}}`, "query_file is not supported"},
+				{"results that are not XML", `{"match": {"type": "exact", "query": "a"}, "response": {"results": "<moca-results>"}}`, "invalid response.results XML"},
+			}
+			for _, c := range cases {
+				w := adminDo(mux, "POST", "/_mocka/responses", c.body)
+				Convey("Then "+c.name+" is rejected without changing the responses", func() {
+					So(w.Code, ShouldEqual, http.StatusBadRequest)
+					So(w.Body.String(), ShouldContainSubstring, c.wantErr)
+					So(listResponses(t, mux), ShouldHaveLength, 2)
+				})
+			}
+		})
+
+		Convey("When I delete with an id that is not a number", func() {
+			w := adminDo(mux, "DELETE", "/_mocka/responses/abc", "")
+			So(w.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("When I add a runtime response, change responses.yml, and reload", func() {
+			adminDo(mux, "POST", "/_mocka/responses", `{"match": {"type": "exact", "query": "list users"}}`)
+			oldIDs := map[int]bool{}
+			for _, v := range listResponses(t, mux) {
+				oldIDs[v.Match.ID] = true
+			}
+			writeTestFile(t, dir, "responses.yml", `
+responses:
+  - match: {type: prefix, prefix: "list"}
+    response: {status: 510}
+`)
+			w := adminDo(mux, "POST", "/_mocka/reload", "")
+			views := listResponses(t, mux)
+
+			Convey("Then only the entries now in the file remain, with ids not used before", func() {
+				So(w.Code, ShouldEqual, http.StatusOK)
+				So(w.Body.String(), ShouldContainSubstring, `"count":1`)
+				So(views, ShouldHaveLength, 1)
+				So(views[0].Match.Prefix, ShouldEqual, "list")
+				So(oldIDs[views[0].Match.ID], ShouldBeFalse)
+				So(resolve("list users").Match.Type, ShouldEqual, "prefix")
+			})
+		})
+
+		Convey("When responses.yml becomes invalid and I reload", func() {
+			before := listResponses(t, mux)
+			writeTestFile(t, dir, "responses.yml", "responses:\n  - match: {type: exat}\n")
+			w := adminDo(mux, "POST", "/_mocka/reload", "")
+
+			Convey("Then the error is returned and the current responses are kept", func() {
+				So(w.Code, ShouldEqual, http.StatusInternalServerError)
+				So(w.Body.String(), ShouldContainSubstring, `unknown match type "exat"`)
+				So(listResponses(t, mux), ShouldResemble, before)
+			})
+		})
+	})
+
+	Convey("Given a server backed by an in-memory loader", t, func() {
+		loader := NewInMemoryResponseLoader(
+			WithExactMatch("a", NewResponse(1).Build()),
+			WithExactMatch("b", NewResponse(2).Build()),
+		)
+		lookup, err := NewResponseLookup(loader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewMocaRequestHandler(lookup)
+		mux := http.NewServeMux()
+		RegisterAdminRoutes(mux, handler)
+
+		Convey("When I replace and delete entries and then reload", func() {
+			views := listResponses(t, mux)
+			adminDo(mux, "DELETE", fmt.Sprintf("/_mocka/responses/%d", views[0].Match.ID), "")
+			adminDo(mux, "POST", "/_mocka/responses", `{"match": {"type": "exact", "query": "b"}, "response": {"status": 99}}`)
+			adminDo(mux, "POST", "/_mocka/reload", "")
+			after := listResponses(t, mux)
+
+			Convey("Then the loader's original entries come back unchanged", func() {
+				So(after, ShouldHaveLength, 2)
+				So(after[0].Match.Query, ShouldEqual, "a")
+				So(after[0].Response.Status, ShouldEqual, 1)
+				So(after[1].Match.Query, ShouldEqual, "b")
+				So(after[1].Response.Status, ShouldEqual, 2)
+			})
 		})
 	})
 }

@@ -13,13 +13,15 @@ import (
 
 // --- YAML-level types (unexported) ---
 
+// matchSpec is the match section of a response, shared by the YAML files and
+// the admin API.
 type matchSpec struct {
-	Type      string            `yaml:"type"`
-	Query     string            `yaml:"query,omitempty"`
-	QueryFile string            `yaml:"query_file,omitempty"`
-	Inner     string            `yaml:"inner,omitempty"`
-	Context   map[string]string `yaml:"context,omitempty"`
-	Prefix    string            `yaml:"prefix,omitempty"`
+	Type      string            `yaml:"type" json:"type"`
+	Query     string            `yaml:"query,omitempty" json:"query,omitempty"`
+	QueryFile string            `yaml:"query_file,omitempty" json:"query_file,omitempty"`
+	Inner     string            `yaml:"inner,omitempty" json:"inner,omitempty"`
+	Context   map[string]string `yaml:"context,omitempty" json:"context,omitempty"`
+	Prefix    string            `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 }
 
 type responseSpec struct {
@@ -133,12 +135,30 @@ func (l *FileResponseLoader) loadResponseFile(file string, seen map[string]strin
 // buildEntry validates r, normalizes its query strings, and loads any
 // referenced query and XML result files.
 func (l *FileResponseLoader) buildEntry(r rawEntry) (Entry, error) {
-	m := r.Match
-	e := Entry{
-		MatchType:  MatchType(m.Type),
-		StatusCode: r.RespSpec.Status,
-		Message:    r.RespSpec.Message,
+	e, err := matchEntry(r.Match, func(name string) (string, error) {
+		raw, err := os.ReadFile(filepath.Join(l.dataFolder, name))
+		return string(raw), err
+	})
+	if err != nil {
+		return Entry{}, err
 	}
+	e.StatusCode = r.RespSpec.Status
+	e.Message = r.RespSpec.Message
+	if r.RespSpec.Results != "" {
+		xmlRaw, err := os.ReadFile(filepath.Join(l.dataFolder, r.RespSpec.Results))
+		if err != nil {
+			return Entry{}, fmt.Errorf("reading results file %s: %w", r.RespSpec.Results, err)
+		}
+		e.ResultSet = strings.TrimSpace(string(xmlRaw))
+	}
+	return e, nil
+}
+
+// matchEntry validates m and returns an Entry with its normalized match
+// fields set. readQueryFile reads a query_file; when it is nil, query_file is
+// rejected.
+func matchEntry(m matchSpec, readQueryFile func(name string) (string, error)) (Entry, error) {
+	e := Entry{MatchType: MatchType(m.Type)}
 	// used lists the match fields that are set, so each type can reject the
 	// fields that belong to other types.
 	used := map[string]bool{
@@ -155,12 +175,14 @@ func (l *FileResponseLoader) buildEntry(r rawEntry) (Entry, error) {
 		switch {
 		case used["query"] && used["query_file"]:
 			return Entry{}, fmt.Errorf("exact match sets both query and query_file; use one")
+		case used["query_file"] && readQueryFile == nil:
+			return Entry{}, fmt.Errorf("query_file is not supported here; send the query text in query")
 		case used["query_file"]:
-			raw, err := os.ReadFile(filepath.Join(l.dataFolder, m.QueryFile))
+			raw, err := readQueryFile(m.QueryFile)
 			if err != nil {
 				return Entry{}, fmt.Errorf("reading query_file %s: %w", m.QueryFile, err)
 			}
-			e.Query = normalizeQuery(string(raw))
+			e.Query = normalizeQuery(raw)
 		default:
 			e.Query = normalizeQuery(m.Query)
 		}
@@ -192,13 +214,6 @@ func (l *FileResponseLoader) buildEntry(r rawEntry) (Entry, error) {
 		if used[field] && !slices.Contains(allowed, field) {
 			return Entry{}, fmt.Errorf("%s is not used by %s matches", field, e.MatchType)
 		}
-	}
-	if r.RespSpec.Results != "" {
-		xmlRaw, err := os.ReadFile(filepath.Join(l.dataFolder, r.RespSpec.Results))
-		if err != nil {
-			return Entry{}, fmt.Errorf("reading results file %s: %w", r.RespSpec.Results, err)
-		}
-		e.ResultSet = strings.TrimSpace(string(xmlRaw))
 	}
 	return e, nil
 }

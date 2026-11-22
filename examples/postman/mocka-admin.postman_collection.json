@@ -2,13 +2,17 @@
   "info": {
     "_postman_id": "0128f90b-bb2c-46ab-9a39-c603e968a750",
     "name": "Mocka Admin API",
-    "description": "Exercises the JSON admin endpoints under /_mocka/ on a running mockasrv instance. They need no session key.\n\nRun the \"Mocka MOCA Server\" collection first so the request log has entries, then run these in order:\n1. Match Query — shows which entry a query matches and the response it gets\n2. Match Query (JSON, no match) — the same endpoint with a JSON body\n3. List Requests — the requests received so far and what handled each one\n4. List Unmatched Requests — only the queries with no registered response\n5. Clear Request Log — empties the log",
+    "description": "Exercises the JSON admin endpoints under /_mocka/ on a running mockasrv instance. They need no session key.\n\nRun the \"Mocka MOCA Server\" collection first so the request log has entries, then run these in order:\n1. Match Query — shows which entry a query matches and the response it gets\n2. Match Query (JSON, no match) — the same endpoint with a JSON body\n3. List Requests — the requests received so far and what handled each one\n4. List Unmatched Requests — only the queries with no registered response\n5. List Responses — the registered responses with their ids\n6. Register Response — adds a response at runtime\n7. Match Registered Query — the new response now matches\n8. Delete Response — removes it by id\n9. Reload Responses — re-reads the files and drops runtime entries\n10. Clear Request Log — empties the log",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:4500"
+    },
+    {
+      "key": "responseId",
+      "value": ""
     }
   ],
   "item": [
@@ -161,7 +165,162 @@
       "response": []
     },
     {
-      "name": "5. Clear Request Log",
+      "name": "5. List Responses",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('lists the entry from responses.yml', () => {",
+              "    const rec = json.responses.find(r => r.match.source === 'responses.yml entry 1');",
+              "    pm.expect(rec, 'responses.yml entry 1').to.exist;",
+              "    pm.expect(rec.match.id).to.be.a('number');",
+              "    pm.expect(rec.response.results).to.include('<moca-results>');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/_mocka/responses",
+        "description": "The registered responses in match order. Each match.id identifies an entry for DELETE /_mocka/responses/{id}; match.source shows where it is defined."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Register Response",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('HTTP 201 or 200', () => pm.expect(pm.response.code).to.be.oneOf([201, 200]));",
+              "pm.test('query is normalized', () => pm.expect(json.match.query).to.eql(\"list carriers where carcod = 'ups'\"));",
+              "pm.test('source is the admin API', () => pm.expect(json.match.source).to.eql('admin API'));",
+              "pm.collectionVariables.set('responseId', json.match.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/_mocka/responses",
+        "description": "Registers a response at runtime with the same match fields as responses.yml; response.results holds the XML itself. A match that duplicates an existing entry replaces it (200); otherwise it is added (201). The test saves match.id to the responseId collection variable.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"match\": {\"type\": \"exact\", \"query\": \"list carriers where carcod = 'UPS'\"},\n  \"response\": {\n    \"status\": 0,\n    \"results\": \"<moca-results><metadata><column name=\\\"carcod\\\" type=\\\"S\\\" length=\\\"10\\\" nullable=\\\"false\\\"/></metadata><data><row><field>UPS</field></row></data></moca-results>\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "7. Match Registered Query",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('matches the registered entry', () => {",
+              "    pm.expect(json.match.id).to.eql(Number(pm.collectionVariables.get('responseId')));",
+              "    pm.expect(json.response.results).to.include('<field>UPS</field>');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/_mocka/match",
+        "description": "The query that was unmatched before now resolves to the runtime entry.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"list carriers where carcod = 'UPS'\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "8. Delete Response",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/_mocka/responses/{{responseId}}",
+        "description": "Removes the entry registered in request 6."
+      },
+      "response": []
+    },
+    {
+      "name": "9. Reload Responses",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('reloaded the entry in responses.yml', () => pm.expect(json.count).to.eql(1));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/_mocka/reload",
+        "description": "Re-reads the response files and discards runtime entries. If the files are invalid, the current responses are kept and the error is returned."
+      },
+      "response": []
+    },
+    {
+      "name": "10. Clear Request Log",
       "event": [
         {
           "listen": "test",
