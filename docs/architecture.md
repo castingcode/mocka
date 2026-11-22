@@ -102,10 +102,16 @@ to worry about case or whitespace.
 
 ### `FileResponseLoader`
 
-Used by the standalone `mockasrv` binary. Reads a `responses.yml` file from a
-directory on disk, with result XML loaded from paths relative to that directory.
-A missing `responses.yml` is treated as an empty registry; a malformed one returns
-an error.
+Used by the standalone `mockasrv` binary. Reads `responses.yml` (or `responses.yaml`,
+but not both) from a directory on disk, then every `*.yml` and `*.yaml` file in its
+`responses.d/` subdirectory in lexical order. Result XML and query files are loaded
+from paths relative to the responses directory. Missing files are treated as an
+empty registry, and `NewResponseLookup` logs a warning when it loads no entries.
+
+Files are decoded strictly: unknown fields, unknown match types, missing or
+conflicting match fields, fields that belong to another match type, and duplicate
+entries (same normalized exact query, prefix, or publish_data inner and context)
+across all files return an error naming the file and entry.
 
 ## Query Matching Hierarchy
 
@@ -135,7 +141,8 @@ The matcher:
 1. Extracts the key/value pairs from the `publish data where` clause (order-insensitive)
 2. Extracts the inner query from inside `{ }` and normalizes it
 3. Looks for a registered entry with `type: publish_data`, matching `inner` query
-   AND all `context` key/value pairs
+   AND all `context` key/value pairs; when several match, the entry with the most
+   context pairs wins, and the first registered breaks a tie
 4. Falls back to a registered entry with `type: publish_data`, matching `inner` query
    only (no context), if the contextual match fails
 
@@ -152,7 +159,8 @@ The normalized query starts with a registered prefix string.
 ```
 
 This matches `list warehouses where wh_id = 'abc'` and any other query beginning
-with that string after normalization.
+with that string after normalization. When several prefixes match, the longest one
+wins, independent of registration order.
 
 ### 4. No Match
 
@@ -165,6 +173,8 @@ Used by `FileResponseLoader` and the standalone binary. Responses are defined in
 single `responses.yml` file; result XML is stored in separate files referenced by path.
 
 ### Schema
+
+Additional files in `responses.d/` use the same schema.
 
 ```yaml
 responses:

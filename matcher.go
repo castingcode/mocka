@@ -12,7 +12,7 @@ import (
 // Order:
 //  1. Exact match
 //  2. Publish-data contextual match (with context, then without)
-//  3. Prefix match
+//  3. Prefix match (longest prefix wins)
 //  4. No match → StatusCommandNotFound
 func matchQuery(query string, entries []Entry, logger *slog.Logger) Response {
 	logger.Debug("matching query", "query", query)
@@ -39,12 +39,17 @@ func matchQuery(query string, entries []Entry, logger *slog.Logger) Response {
 		}
 	}
 
-	// 3. Prefix match
-	for _, e := range entries {
-		if e.MatchType == MatchTypePrefix && strings.HasPrefix(query, e.Prefix) {
-			logger.Debug("prefix match", "prefix", e.Prefix)
-			return e.response()
+	// 3. Prefix match (the longest matching prefix wins)
+	var best *Entry
+	for i, e := range entries {
+		if e.MatchType == MatchTypePrefix && strings.HasPrefix(query, e.Prefix) &&
+			(best == nil || len(e.Prefix) > len(best.Prefix)) {
+			best = &entries[i]
 		}
+	}
+	if best != nil {
+		logger.Debug("prefix match", "prefix", best.Prefix)
+		return best.response()
 	}
 
 	// 4. No match
@@ -94,25 +99,28 @@ func parsePublishData(query string) (publishDataParsed, bool) {
 
 // findPublishData searches entries for a publish_data match.
 // When withContext is true it only considers entries that have context and
-// whose context key/value pairs all appear in pd.context (order-insensitive).
+// whose context key/value pairs all appear in pd.context (order-insensitive);
+// the entry with the most context pairs wins, and the first registered wins a tie.
 // When withContext is false it only considers entries without context.
 func findPublishData(pd publishDataParsed, entries []Entry, withContext bool) (Response, bool) {
-	for _, e := range entries {
-		if e.MatchType != MatchTypePublishData {
-			continue
-		}
-		if e.Inner != pd.inner {
+	var best *Entry
+	for i, e := range entries {
+		if e.MatchType != MatchTypePublishData || e.Inner != pd.inner {
 			continue
 		}
 		hasCtx := len(e.Context) > 0
-		if withContext && hasCtx && contextMatches(e.Context, pd.context) {
-			return e.response(), true
+		if withContext && hasCtx && contextMatches(e.Context, pd.context) &&
+			(best == nil || len(e.Context) > len(best.Context)) {
+			best = &entries[i]
 		}
 		if !withContext && !hasCtx {
 			return e.response(), true
 		}
 	}
-	return Response{}, false
+	if best == nil {
+		return Response{}, false
+	}
+	return best.response(), true
 }
 
 // contextMatches returns true if every key/value pair in registered is present

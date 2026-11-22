@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -51,71 +52,170 @@ func NewFileResponseLoader(dataFolder string) *FileResponseLoader {
 	return &FileResponseLoader{dataFolder: dataFolder}
 }
 
-// Load implements ResponseLoader by reading responses.yml from the data folder.
-// A missing file is treated as an empty registry; malformed files return an error.
+// Load implements ResponseLoader. It reads responses.yml (or responses.yaml)
+// from the data folder, followed by every *.yml and *.yaml file in the
+// responses.d subfolder in lexical order. Missing files are treated as an empty
+// registry. Malformed or invalid entries, unknown fields, and duplicate matches
+// across all files return an error.
 func (l *FileResponseLoader) Load() ([]Entry, error) {
-	entries, err := loadResponseFile(filepath.Join(l.dataFolder, "responses.yml"), l.dataFolder)
+	files, err := l.responseFiles()
 	if err != nil {
-		return nil, fmt.Errorf("loading responses.yml: %w", err)
+		return nil, fmt.Errorf("finding response files: %w", err)
+	}
+	var entries []Entry
+	seen := make(map[string]string) // duplicate key -> location of first definition
+	for _, file := range files {
+		fileEntries, err := l.loadResponseFile(file, seen)
+		if err != nil {
+			return nil, fmt.Errorf("loading %s: %w", file, err)
+		}
+		entries = append(entries, fileEntries...)
 	}
 	return entries, nil
 }
 
-func loadResponseFile(path, dataFolder string) ([]Entry, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+// responseFiles returns the response file paths to load, relative to the data
+// folder.
+func (l *FileResponseLoader) responseFiles() ([]string, error) {
+	var files []string
+	for _, name := range []string{"responses.yml", "responses.yaml"} {
+		_, err := os.Stat(filepath.Join(l.dataFolder, name))
+		if err == nil {
+			files = append(files, name)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("checking %s: %w", name, err)
 		}
-		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
-	var f responseFile
-	if err := yaml.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	if len(files) > 1 {
+		return nil, fmt.Errorf("both responses.yml and responses.yaml exist; keep only one")
 	}
-	return buildEntries(f.Responses, dataFolder)
+	var extra []string
+	for _, pattern := range []string{"*.yml", "*.yaml"} {
+		matches, err := filepath.Glob(filepath.Join(l.dataFolder, "responses.d", pattern))
+		if err != nil {
+			return nil, fmt.Errorf("listing responses.d: %w", err)
+		}
+		for _, m := range matches {
+			extra = append(extra, filepath.Join("responses.d", filepath.Base(m)))
+		}
+	}
+	slices.Sort(extra)
+	return append(files, extra...), nil
 }
 
-// buildEntries normalizes all query strings and loads any referenced XML result
-// files, returning a slice of ready-to-match Entry values.
-func buildEntries(raws []rawEntry, dataFolder string) ([]Entry, error) {
-	entries := make([]Entry, 0, len(raws))
-	for _, r := range raws {
-		e := Entry{
-			MatchType:  MatchType(r.Match.Type),
-			StatusCode: r.RespSpec.Status,
-			Message:    r.RespSpec.Message,
+func (l *FileResponseLoader) loadResponseFile(file string, seen map[string]string) ([]Entry, error) {
+	data, err := os.ReadFile(filepath.Join(l.dataFolder, file))
+	if err != nil {
+		return nil, fmt.Errorf("reading file: %w", err)
+	}
+	var f responseFile
+	if err := yaml.UnmarshalWithOptions(data, &f, yaml.Strict()); err != nil {
+		return nil, fmt.Errorf("parsing file: %w", err)
+	}
+	entries := make([]Entry, 0, len(f.Responses))
+	for i, r := range f.Responses {
+		e, err := l.buildEntry(r)
+		if err != nil {
+			return nil, fmt.Errorf("entry %d: %w", i+1, err)
 		}
-		switch MatchType(r.Match.Type) {
-		case MatchTypeExact:
-			if r.Match.QueryFile != "" {
-				raw, err := os.ReadFile(filepath.Join(dataFolder, r.Match.QueryFile))
-				if err != nil {
-					return nil, fmt.Errorf("reading query_file %s: %w", r.Match.QueryFile, err)
-				}
-				e.Query = normalizeQuery(string(raw))
-			} else {
-				e.Query = normalizeQuery(r.Match.Query)
-			}
-		case MatchTypePublishData:
-			e.Inner = normalizeQuery(r.Match.Inner)
-			// Normalize context values to lowercase for consistent comparison
-			// with values extracted from the normalized (lowercased) incoming query.
-			e.Context = make(map[string]string)
-			for k, v := range r.Match.Context {
-				e.Context[k] = strings.ToLower(v)
-			}
-		case MatchTypePrefix:
-			e.Prefix = normalizeQuery(r.Match.Prefix)
+		location := fmt.Sprintf("%s entry %d", file, i+1)
+		key := duplicateKey(e)
+		if first, ok := seen[key]; ok {
+			return nil, fmt.Errorf("entry %d: duplicate %s match (first defined in %s)", i+1, e.MatchType, first)
 		}
-		if r.RespSpec.Results != "" {
-			xmlRaw, err := os.ReadFile(filepath.Join(dataFolder, r.RespSpec.Results))
-			if err != nil {
-				return nil, fmt.Errorf("reading results file %s: %w", r.RespSpec.Results, err)
-			}
-			e.ResultSet = strings.TrimSpace(string(xmlRaw))
-		}
+		seen[key] = location
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// buildEntry validates r, normalizes its query strings, and loads any
+// referenced query and XML result files.
+func (l *FileResponseLoader) buildEntry(r rawEntry) (Entry, error) {
+	m := r.Match
+	e := Entry{
+		MatchType:  MatchType(m.Type),
+		StatusCode: r.RespSpec.Status,
+		Message:    r.RespSpec.Message,
+	}
+	// used lists the match fields that are set, so each type can reject the
+	// fields that belong to other types.
+	used := map[string]bool{
+		"query":      m.Query != "",
+		"query_file": m.QueryFile != "",
+		"inner":      m.Inner != "",
+		"context":    len(m.Context) > 0,
+		"prefix":     m.Prefix != "",
+	}
+	var allowed []string
+	switch e.MatchType {
+	case MatchTypeExact:
+		allowed = []string{"query", "query_file"}
+		switch {
+		case used["query"] && used["query_file"]:
+			return Entry{}, fmt.Errorf("exact match sets both query and query_file; use one")
+		case used["query_file"]:
+			raw, err := os.ReadFile(filepath.Join(l.dataFolder, m.QueryFile))
+			if err != nil {
+				return Entry{}, fmt.Errorf("reading query_file %s: %w", m.QueryFile, err)
+			}
+			e.Query = normalizeQuery(string(raw))
+		default:
+			e.Query = normalizeQuery(m.Query)
+		}
+		if e.Query == "" {
+			return Entry{}, fmt.Errorf("exact match needs a non-empty query or query_file")
+		}
+	case MatchTypePublishData:
+		allowed = []string{"inner", "context"}
+		e.Inner = normalizeQuery(m.Inner)
+		if e.Inner == "" {
+			return Entry{}, fmt.Errorf("publish_data match needs a non-empty inner")
+		}
+		// Normalize context values to lowercase for consistent comparison
+		// with values extracted from the normalized (lowercased) incoming query.
+		e.Context = make(map[string]string)
+		for k, v := range m.Context {
+			e.Context[k] = strings.ToLower(v)
+		}
+	case MatchTypePrefix:
+		allowed = []string{"prefix"}
+		e.Prefix = normalizeQuery(m.Prefix)
+		if e.Prefix == "" {
+			return Entry{}, fmt.Errorf("prefix match needs a non-empty prefix")
+		}
+	default:
+		return Entry{}, fmt.Errorf("unknown match type %q (want exact, publish_data, or prefix)", m.Type)
+	}
+	for _, field := range []string{"query", "query_file", "inner", "context", "prefix"} {
+		if used[field] && !slices.Contains(allowed, field) {
+			return Entry{}, fmt.Errorf("%s is not used by %s matches", field, e.MatchType)
+		}
+	}
+	if r.RespSpec.Results != "" {
+		xmlRaw, err := os.ReadFile(filepath.Join(l.dataFolder, r.RespSpec.Results))
+		if err != nil {
+			return Entry{}, fmt.Errorf("reading results file %s: %w", r.RespSpec.Results, err)
+		}
+		e.ResultSet = strings.TrimSpace(string(xmlRaw))
+	}
+	return e, nil
+}
+
+// duplicateKey identifies what an entry matches, so two entries that match the
+// same queries produce the same key.
+func duplicateKey(e Entry) string {
+	switch e.MatchType {
+	case MatchTypeExact:
+		return "exact\x00" + e.Query
+	case MatchTypePrefix:
+		return "prefix\x00" + e.Prefix
+	default:
+		pairs := make([]string, 0, len(e.Context))
+		for k, v := range e.Context {
+			pairs = append(pairs, k+"="+v)
+		}
+		slices.Sort(pairs)
+		return "publish_data\x00" + e.Inner + "\x00" + strings.Join(pairs, "\x00")
+	}
 }

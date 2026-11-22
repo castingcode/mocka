@@ -170,6 +170,30 @@ func TestMatchQuery_PublishData(t *testing.T) {
 			})
 		})
 
+		Convey("Given a less specific contextual entry registered before a more specific one", func() {
+
+			entries := []Entry{
+				{MatchType: MatchTypePublishData, Inner: "do thing", Context: map[string]string{"wh_id": "mhe"}, StatusCode: 1},
+				{MatchType: MatchTypePublishData, Inner: "do thing", Context: map[string]string{"wh_id": "mhe", "client": "acme"}, StatusCode: 2},
+				{MatchType: MatchTypePublishData, Inner: "do thing", Context: map[string]string{"client": "acme"}, StatusCode: 3},
+			}
+
+			Convey("When the query satisfies every entry", func() {
+				q := normalizeQuery("publish data where client = 'ACME' and wh_id = 'MHE' | { do thing }")
+				Convey("Then the entry with the most matching context keys wins", func() {
+					So(matchQuery(q, entries, logger).StatusCode, ShouldEqual, 2)
+				})
+			})
+
+			Convey("When the query satisfies two equally specific entries", func() {
+				q := normalizeQuery("publish data where client = 'ACME' and wh_id = 'MHE' and x = '1' | { do thing }")
+				one := []Entry{entries[2], entries[0]}
+				Convey("Then the first registered wins", func() {
+					So(matchQuery(q, one, logger).StatusCode, ShouldEqual, 3)
+				})
+			})
+		})
+
 		Convey("Given a generic (no-context) entry only", func() {
 
 			entries := []Entry{
@@ -220,6 +244,19 @@ func TestMatchQuery_PrefixMatch(t *testing.T) {
 			r := matchQuery(normalizeQuery("list warehouses"), entries, logger)
 			Convey("Then the prefix response is still returned", func() {
 				So(r.StatusCode, ShouldEqual, StatusSrvNoDataFound)
+			})
+		})
+
+		Convey("When a longer prefix is registered after a shorter one", func() {
+			entries := []Entry{
+				{MatchType: MatchTypePrefix, Prefix: normalizeQuery("list"), StatusCode: 1},
+				{MatchType: MatchTypePrefix, Prefix: normalizeQuery("list warehouses where"), StatusCode: 3},
+				{MatchType: MatchTypePrefix, Prefix: normalizeQuery("list warehouses"), StatusCode: 2},
+			}
+			Convey("Then the longest matching prefix wins regardless of order", func() {
+				So(matchQuery(normalizeQuery("list warehouses where wh_id = 'A'"), entries, logger).StatusCode, ShouldEqual, 3)
+				So(matchQuery(normalizeQuery("list warehouses"), entries, logger).StatusCode, ShouldEqual, 2)
+				So(matchQuery(normalizeQuery("list users"), entries, logger).StatusCode, ShouldEqual, 1)
 			})
 		})
 

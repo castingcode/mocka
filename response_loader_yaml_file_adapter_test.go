@@ -212,3 +212,153 @@ responses:
 		})
 	})
 }
+
+func TestFileResponseLoader_Validation(t *testing.T) {
+
+	Convey("FileResponseLoader — invalid entries are rejected", t, func() {
+
+		cases := []struct {
+			name    string
+			entry   string
+			wantErr string
+		}{
+			{"a misspelled match type", "match: {type: exat, query: ping}", `entry 1: unknown match type "exat"`},
+			{"a missing match type", "match: {query: ping}", `entry 1: unknown match type ""`},
+			{"a misspelled field name", "match: {type: exact, querry: ping}", `[2:26] unknown field "querry"`},
+			{"both query and query_file", "match: {type: exact, query: ping, query_file: q.txt}", "entry 1: exact match sets both query and query_file"},
+			{"an exact match without a query", "match: {type: exact}", "entry 1: exact match needs a non-empty query"},
+			{"a prefix match without a prefix", "match: {type: prefix}", "entry 1: prefix match needs a non-empty prefix"},
+			{"a publish_data match without inner", "match: {type: publish_data, context: {wh_id: MHE}}", "entry 1: publish_data match needs a non-empty inner"},
+			{"a field that belongs to another type", "match: {type: prefix, prefix: list, query: list}", "entry 1: query is not used by prefix matches"},
+		}
+
+		for _, c := range cases {
+			Convey("Given "+c.name, func() {
+				dir := t.TempDir()
+				writeTestFile(t, dir, "responses.yml", "responses:\n  - "+c.entry+"\n    response: {status: 0}\n")
+				_, err := loaderFor(dir).Load()
+
+				Convey("Then an error names the file, the location, and the problem", func() {
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldContainSubstring, "loading responses.yml: ")
+					So(err.Error(), ShouldContainSubstring, c.wantErr)
+				})
+			})
+		}
+
+		Convey("Given two publish_data entries with the same inner and context in a different order and case", func() {
+			dir := t.TempDir()
+			writeTestFile(t, dir, "responses.yml", `
+responses:
+  - match: {type: publish_data, inner: do thing, context: {wh_id: MHE, client: ACME}}
+    response: {status: 0}
+  - match: {type: publish_data, inner: DO THING, context: {client: acme, wh_id: mhe}}
+    response: {status: 0}
+`)
+			_, err := loaderFor(dir).Load()
+
+			Convey("Then a duplicate error points at the first definition", func() {
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldContainSubstring, "entry 2: duplicate publish_data match (first defined in responses.yml entry 1)")
+			})
+		})
+
+		Convey("Given publish_data entries with the same inner but different context", func() {
+			dir := t.TempDir()
+			writeTestFile(t, dir, "responses.yml", `
+responses:
+  - match: {type: publish_data, inner: do thing, context: {wh_id: MHE}}
+    response: {status: 0}
+  - match: {type: publish_data, inner: do thing, context: {wh_id: WMD1}}
+    response: {status: 0}
+  - match: {type: publish_data, inner: do thing}
+    response: {status: 0}
+`)
+			entries, err := loaderFor(dir).Load()
+
+			Convey("Then they are not duplicates", func() {
+				So(err, ShouldBeNil)
+				So(entries, ShouldHaveLength, 3)
+			})
+		})
+	})
+}
+
+func TestFileResponseLoader_MultipleFiles(t *testing.T) {
+
+	Convey("FileResponseLoader — multiple response files", t, func() {
+
+		Convey("Given responses.yml and two files in responses.d", func() {
+			dir := t.TempDir()
+			if err := os.Mkdir(filepath.Join(dir, "responses.d"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			writeTestFile(t, dir, "shared.xml", `<moca-results/>`)
+			writeTestFile(t, dir, "responses.yml", "responses:\n  - match: {type: exact, query: a}\n    response: {status: 1}\n")
+			writeTestFile(t, dir, "responses.d/20-orders.yaml", "responses:\n  - match: {type: exact, query: c}\n    response: {status: 3}\n")
+			writeTestFile(t, dir, "responses.d/10-warehouses.yml", "responses:\n  - match: {type: exact, query: b}\n    response: {status: 2, results: shared.xml}\n")
+			writeTestFile(t, dir, "responses.d/notes.txt", "not yaml")
+			entries, err := loaderFor(dir).Load()
+
+			Convey("Then responses.yml loads first, then responses.d files in name order", func() {
+				So(err, ShouldBeNil)
+				So(entries, ShouldHaveLength, 3)
+				So(entries[0].Query, ShouldEqual, "a")
+				So(entries[1].Query, ShouldEqual, "b")
+				So(entries[2].Query, ShouldEqual, "c")
+			})
+
+			Convey("Then results paths in responses.d are relative to the responses folder", func() {
+				So(entries[1].ResultSet, ShouldEqual, "<moca-results/>")
+			})
+		})
+
+		Convey("Given the same exact query in responses.yml and in responses.d", func() {
+			dir := t.TempDir()
+			if err := os.Mkdir(filepath.Join(dir, "responses.d"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			writeTestFile(t, dir, "responses.yml", "responses:\n  - match: {type: exact, query: List  Warehouses}\n    response: {status: 0}\n")
+			writeTestFile(t, dir, "responses.d/more.yml", "responses:\n  - match: {type: exact, query: list warehouses}\n    response: {status: 0}\n")
+			_, err := loaderFor(dir).Load()
+
+			Convey("Then a duplicate error names both locations", func() {
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldContainSubstring, filepath.Join("responses.d", "more.yml"))
+				So(err.Error(), ShouldContainSubstring, "first defined in responses.yml entry 1")
+			})
+		})
+
+		Convey("Given only responses.yaml", func() {
+			dir := t.TempDir()
+			writeTestFile(t, dir, "responses.yaml", "responses:\n  - match: {type: prefix, prefix: list}\n    response: {status: 0}\n")
+			entries, err := loaderFor(dir).Load()
+
+			Convey("Then it is loaded", func() {
+				So(err, ShouldBeNil)
+				So(entries, ShouldHaveLength, 1)
+			})
+		})
+
+		Convey("Given both responses.yml and responses.yaml", func() {
+			dir := t.TempDir()
+			writeTestFile(t, dir, "responses.yml", "responses: []\n")
+			writeTestFile(t, dir, "responses.yaml", "responses: []\n")
+			_, err := loaderFor(dir).Load()
+
+			Convey("Then an error asks to keep only one", func() {
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldContainSubstring, "keep only one")
+			})
+		})
+
+		Convey("Given no response files at all", func() {
+			entries, err := loaderFor(t.TempDir()).Load()
+
+			Convey("Then the registry is empty without an error", func() {
+				So(err, ShouldBeNil)
+				So(entries, ShouldBeEmpty)
+			})
+		})
+	})
+}

@@ -104,4 +104,3 @@ func WithContextualPublishDataMatch(inner string, context map[string]string, res
 		})
 	}
 }
-

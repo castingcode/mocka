@@ -18,9 +18,15 @@ func NewResponseLookup(loader ResponseLoader) (*ResponseLookup, error) {
 	if err != nil {
 		return nil, err
 	}
+	logger := slog.Default()
+	if len(entries) == 0 {
+		logger.Warn("no responses loaded; every non-built-in query will return command not found")
+	} else {
+		logger.Info("responses loaded", "count", len(entries))
+	}
 	return &ResponseLookup{
 		entries: entries,
-		logger:  slog.Default(),
+		logger:  logger,
 	}, nil
 }
 

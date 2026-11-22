@@ -188,25 +188,43 @@ go install github.com/castingcode/mocka/cmd/mockasrv@latest
 or run via Docker:
 
 ```sh
-docker run -p 9000:9000 -v ./responses:/responses castingcode/mocka
+docker run -p 4500:4500 -v ./responses:/responses castingcode/mocka
 ```
 
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `-port` | `9000` | Port to listen on |
+| `-port` | `4500` | Port to listen on |
 | `-folder` | `./responses` next to the binary | Directory containing `responses.yml` |
+| `-validate` | `false` | Load and validate the response files, then exit (status 1 on error) without serving. Useful in CI. |
 
 ### Directory layout
 
 ```
 responses/
-  responses.yml          # required — global response definitions
+  responses.yml          # response definitions (responses.yaml also works; not both)
+  responses.d/           # optional — more response files, loaded in file name order
+    10-warehouses.yml
+    20-orders.yml
   warehouses-mhe.xml     # result XML files (paths are relative to this directory)
   queries/
     long-query.txt       # optional — query text files for long queries
 ```
+
+Every `*.yml` and `*.yaml` file in `responses.d/` uses the same schema as `responses.yml`, so you can group responses by feature. `results` and `query_file` paths are always relative to the responses directory, even in files under `responses.d/`.
+
+### Validation
+
+Response files are validated when the server starts, and any problem stops it with an error naming the file and entry:
+
+- unknown `match.type` values and misspelled field names
+- a missing `query`/`query_file`, `inner`, or `prefix` for the entry's type, or both `query` and `query_file`
+- fields that belong to a different match type (for example `query` on a `prefix` entry)
+- missing `query_file` or `results` files
+- duplicate entries — the same exact query, prefix, or publish_data inner and context — within or across files
+
+Run `mockasrv -validate -folder ./responses` to check the files without starting the server. If no response files are found, the server still starts and logs a warning.
 
 ### responses.yml schema
 
@@ -297,9 +315,9 @@ These rules apply identically for all three MOCA syntaxes (local, SQL, Groovy). 
 For each incoming query, Mocka evaluates registered entries in this order, returning the first match:
 
 1. **Exact** — the normalized query equals a registered `type: exact` entry
-2. **Publish-data contextual** — the query is a `publish data where ... | { ... }` form, and a `type: publish_data` entry matches both the inner command and all of the entry's context key/value pairs
+2. **Publish-data contextual** — the query is a `publish data where ... | { ... }` form, and a `type: publish_data` entry matches both the inner command and all of the entry's context key/value pairs; when several match, the one with the most context pairs wins (the first listed breaks a tie)
 3. **Publish-data generic** — same form, but a `type: publish_data` entry with no context matches the inner command alone
-4. **Prefix** — the normalized query starts with a registered `type: prefix` string
+4. **Prefix** — the normalized query starts with a registered `type: prefix` string; when several prefixes match, the longest wins regardless of file order
 5. **No match** — returns status `501` (command not found)
 
 ---

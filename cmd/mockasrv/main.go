@@ -19,6 +19,7 @@ func main() {
 	folder := flag.String("folder", "", "Folder to store mock data")
 	logFormat := flag.String("log-format", "text", "Log format: text or json")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, or error")
+	validate := flag.Bool("validate", false, "Load and validate the response files, then exit without serving")
 	flag.Parse()
 
 	logger, err := newLogger(*logFormat, *logLevel, os.Stdout)
@@ -32,6 +33,10 @@ func main() {
 	if err != nil {
 		logger.Error("failed to start server", "error", err)
 		os.Exit(1)
+	}
+	if *validate {
+		logger.Info("response files are valid", "responses", responsesPath)
+		return
 	}
 
 	address := fmt.Sprintf(":%d", *port)
