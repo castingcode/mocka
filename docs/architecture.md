@@ -23,6 +23,7 @@ by file rather than by sub-package:
 | File | Responsibility |
 |---|---|
 | `http_handler.go` | HTTP routing, `Router` interface, built-in command handling (ping, login, logout) |
+| `admin_handler.go` | Admin endpoints under `/_mocka/` (match explanation, request log) and `RegisterAdminRoutes` |
 | `registry.go` | `ResponseLookup` — resolves normalized queries to responses |
 | `matcher.go` | Query matching hierarchy (`matchQuery`) |
 | `query.go` | Query normalization (`normalizeQuery`) |
@@ -69,6 +70,22 @@ type Router interface {
 `*http.ServeMux` satisfies this interface out of the box. This keeps the library
 free of HTTP framework dependencies while remaining compatible with any router that
 follows the standard `net/http` handler signature.
+
+## Admin Endpoints
+
+`RegisterAdminRoutes` registers JSON endpoints served by the same `MocaRequestHandler`:
+
+| Route | Purpose |
+|---|---|
+| `POST /_mocka/match` | Resolve a query (plain-text body, or `{"query": ...}` as JSON) and report the matched entry, its `Source`, and the response. Built-in commands are reported as `builtin`. No session needed; not logged. |
+| `GET /_mocka/requests` | The request log, oldest first; `?unmatched=true` keeps only queries no registered entry matched |
+| `DELETE /_mocka/requests` | Clear the request log |
+
+The handler logs every MOCA request it decodes (query, normalized query, status,
+what handled it) in a mutex-guarded slice capped at the most recent 1000 records,
+because the HTTP server calls it from concurrent goroutines. `Requests()` and
+`ClearRequests()` expose the log to Go callers. `FileResponseLoader` sets
+`Entry.Source` to the defining file and entry number; in-memory entries leave it empty.
 
 ## Response Loaders
 

@@ -34,3 +34,9 @@ func NewResponseLookup(loader ResponseLoader) (*ResponseLookup, error) {
 func (r *ResponseLookup) GetResponse(query string) Response {
 	return matchQuery(query, r.entries, r.logger)
 }
+
+// resolve returns the matching response and the entry that produced it, or a
+// nil entry when nothing matched.
+func (r *ResponseLookup) resolve(query string) (Response, *Entry) {
+	return resolveQuery(query, r.entries, r.logger)
+}

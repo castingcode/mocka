@@ -124,6 +124,7 @@ func (l *FileResponseLoader) loadResponseFile(file string, seen map[string]strin
 			return nil, fmt.Errorf("entry %d: duplicate %s match (first defined in %s)", i+1, e.MatchType, first)
 		}
 		seen[key] = location
+		e.Source = location
 		entries = append(entries, e)
 	}
 	return entries, nil

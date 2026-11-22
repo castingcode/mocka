@@ -336,6 +336,55 @@ All other commands require a `SESSION_KEY` environment variable in the MOCA requ
 
 ---
 
+## Admin API
+
+The standalone binary serves these endpoints next to `/service`. Go library users get them with `mocka.RegisterAdminRoutes(mux, handler)`. They need no session key.
+
+### `POST /_mocka/match` — test a query
+
+Shows how a query would be handled without sending a MOCA request. The body is the query text, or `{"query": "..."}` with `Content-Type: application/json`.
+
+```sh
+curl -s localhost:4500/_mocka/match -d "LIST warehouses where wh_id = 'MHE'"
+```
+
+```json
+{
+  "query": "LIST warehouses where wh_id = 'MHE'",
+  "normalized_query": "list warehouses where wh_id = 'mhe'",
+  "match": {"type": "exact", "query": "list warehouses where wh_id = 'mhe'", "source": "responses.yml entry 1"},
+  "response": {"status": 0, "results": "<moca-results>...</moca-results>"}
+}
+```
+
+`match` is `null` when nothing matches; `response` then shows the `501` the client would receive. Built-in commands report `{"type": "builtin", "command": "login"}` and no `response`.
+
+### `GET /_mocka/requests` — see what was received
+
+Returns the MOCA requests received so far, oldest first, as `{"requests": [...]}`. Each record has `time`, `query` (as sent), `normalized_query`, `status`, `match` (same shape as above, or `null`), and `unmatched`. Mocka keeps the most recent 1000.
+
+Add `?unmatched=true` to list only the queries no registered response matched — the quickest way to find out what to add to your response files:
+
+```sh
+curl -s "localhost:4500/_mocka/requests?unmatched=true"
+```
+
+### `DELETE /_mocka/requests` — clear the log
+
+Returns `204`. Useful between tests.
+
+In Go, `handler.Requests()` and `handler.ClearRequests()` give the same access without HTTP, for example to assert which queries your code sent:
+
+```go
+for _, rec := range handler.Requests() {
+    if rec.Unmatched {
+        t.Errorf("no response registered for %q", rec.Query)
+    }
+}
+```
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please open an issue or submit a pull request on [GitHub](https://github.com/castingcode/mocka).

@@ -15,27 +15,34 @@ import (
 //  3. Prefix match (longest prefix wins)
 //  4. No match → StatusCommandNotFound
 func matchQuery(query string, entries []Entry, logger *slog.Logger) Response {
+	r, _ := resolveQuery(query, entries, logger)
+	return r
+}
+
+// resolveQuery is matchQuery that also returns the matched entry, or nil when
+// nothing matched.
+func resolveQuery(query string, entries []Entry, logger *slog.Logger) (Response, *Entry) {
 	logger.Debug("matching query", "query", query)
 
 	// 1. Exact match
-	for _, e := range entries {
+	for i, e := range entries {
 		if e.MatchType == MatchTypeExact && e.Query == query {
 			logger.Debug("exact match", "query", query)
-			return e.response()
+			return e.response(), &entries[i]
 		}
 	}
 
 	// 2. Publish-data contextual match
 	if pd, ok := parsePublishData(query); ok {
 		// Contextual match (entry has context that matches)
-		if r, ok := findPublishData(pd, entries, true); ok {
+		if e := findPublishData(pd, entries, true); e != nil {
 			logger.Debug("publish_data contextual match", "inner", pd.inner)
-			return r
+			return e.response(), e
 		}
 		// Generic fallback (entry has no context)
-		if r, ok := findPublishData(pd, entries, false); ok {
+		if e := findPublishData(pd, entries, false); e != nil {
 			logger.Debug("publish_data generic match", "inner", pd.inner)
-			return r
+			return e.response(), e
 		}
 	}
 
@@ -49,7 +56,7 @@ func matchQuery(query string, entries []Entry, logger *slog.Logger) Response {
 	}
 	if best != nil {
 		logger.Debug("prefix match", "prefix", best.Prefix)
-		return best.response()
+		return best.response(), best
 	}
 
 	// 4. No match
@@ -57,7 +64,7 @@ func matchQuery(query string, entries []Entry, logger *slog.Logger) Response {
 	return Response{
 		StatusCode: StatusCommandNotFound,
 		Message:    fmt.Sprintf("Command (%s) not found", query),
-	}
+	}, nil
 }
 
 // publishDataParsed holds the components extracted from a
@@ -97,12 +104,12 @@ func parsePublishData(query string) (publishDataParsed, bool) {
 	return publishDataParsed{inner: inner, context: ctx}, true
 }
 
-// findPublishData searches entries for a publish_data match.
+// findPublishData returns the publish_data entry that matches pd, or nil.
 // When withContext is true it only considers entries that have context and
 // whose context key/value pairs all appear in pd.context (order-insensitive);
 // the entry with the most context pairs wins, and the first registered wins a tie.
 // When withContext is false it only considers entries without context.
-func findPublishData(pd publishDataParsed, entries []Entry, withContext bool) (Response, bool) {
+func findPublishData(pd publishDataParsed, entries []Entry, withContext bool) *Entry {
 	var best *Entry
 	for i, e := range entries {
 		if e.MatchType != MatchTypePublishData || e.Inner != pd.inner {
@@ -114,13 +121,10 @@ func findPublishData(pd publishDataParsed, entries []Entry, withContext bool) (R
 			best = &entries[i]
 		}
 		if !withContext && !hasCtx {
-			return e.response(), true
+			return &entries[i]
 		}
 	}
-	if best == nil {
-		return Response{}, false
-	}
-	return best.response(), true
+	return best
 }
 
 // contextMatches returns true if every key/value pair in registered is present

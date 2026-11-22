@@ -36,6 +36,7 @@ type Entry struct {
 	StatusCode int
 	Message    string
 	ResultSet  string // pre-loaded XML content
+	Source     string // where the entry is defined, such as "responses.yml entry 2"; empty for in-memory entries
 }
 
 func (e *Entry) response() Response {

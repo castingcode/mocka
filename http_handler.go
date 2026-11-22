@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/castingcode/mocaprotocol"
 )
@@ -27,6 +28,7 @@ func RegisterRoutes(router Router, handler MocaRequestHandlerInterface) {
 type MocaRequestHandler struct {
 	lookup   *ResponseLookup
 	sessions *SessionStore
+	journal  *requestJournal
 	logger   *slog.Logger
 }
 
@@ -36,6 +38,7 @@ func NewMocaRequestHandler(lookup *ResponseLookup) *MocaRequestHandler {
 	return &MocaRequestHandler{
 		lookup:   lookup,
 		sessions: newSessionStore(),
+		journal:  &requestJournal{},
 		logger:   slog.Default(),
 	}
 }
@@ -53,35 +56,40 @@ func (h *MocaRequestHandler) HandleMocaRequest(w http.ResponseWriter, r *http.Re
 	}
 
 	query := normalizeQuery(request.Query.Text)
-	if !strings.HasPrefix(query, "[") {
-		tokens := strings.SplitN(query, " where ", 2)
-		switch tokens[0] {
+	rec := RequestRecord{Time: time.Now(), Query: request.Query.Text, NormalizedQuery: query}
+	defer func() { h.journal.add(rec) }()
+
+	if cmd := builtinCommand(query); cmd != "" {
+		rec.Match = &MatchInfo{Type: "builtin", Command: cmd}
+		switch cmd {
 		case "ping":
 			writeMocaResponse(w, generatePingResponse())
-			return
-		case "logout user":
+		case "logout":
 			sessionKey, invalidKey := h.sessions.GetSessionKey(request)
 			if invalidKey != nil {
+				rec.Status = StatusInvalidSessionKey
 				writeMocaResponse(w, invalidKey)
 				return
 			}
 			h.sessions.Delete(sessionKey)
 			writeMocaResponse(w, generatePingResponse())
-			return
-		default:
-			if inner, ok := loginInnerQuery(query); ok {
-				h.handleLogin(w, strings.SplitN(inner, " where ", 2))
-				return
-			}
+		case "login":
+			inner, _ := loginInnerQuery(query)
+			rec.Status = h.handleLogin(w, strings.SplitN(inner, " where ", 2))
 		}
+		return
 	}
 
 	_, invalidKey := h.sessions.GetSessionKey(request)
 	if invalidKey != nil {
+		rec.Status = StatusInvalidSessionKey
 		writeMocaResponse(w, invalidKey)
 		return
 	}
-	response := h.lookup.GetResponse(query)
+	response, entry := h.lookup.resolve(query)
+	rec.Status = response.StatusCode
+	rec.Match = matchInfo(entry)
+	rec.Unmatched = entry == nil
 
 	mocaResponse := mocaprotocol.MocaResponse{
 		Status:  response.StatusCode,
@@ -103,10 +111,11 @@ func (h *MocaRequestHandler) HandleMocaRequest(w http.ResponseWriter, r *http.Re
 	writeMocaResponse(w, append(XMLDeclaration, body...))
 }
 
-func (h *MocaRequestHandler) handleLogin(w http.ResponseWriter, tokens []string) {
+// handleLogin writes the login response and returns its MOCA status.
+func (h *MocaRequestHandler) handleLogin(w http.ResponseWriter, tokens []string) int {
 	if len(tokens) < 2 {
 		writeMocaResponse(w, generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
-		return
+		return 802
 	}
 	params := make(map[string]string)
 	for _, cond := range strings.Split(tokens[1], " and ") {
@@ -120,11 +129,30 @@ func (h *MocaRequestHandler) handleLogin(w http.ResponseWriter, tokens []string)
 	}
 	if params["usr_pswd"] == "" {
 		writeMocaResponse(w, generateErrorResponse(802, "Missing argument: Password (usr_pswd)"))
-		return
+		return 802
 	}
 	response, sessionKey := generateLoginResponse(params["usr_id"])
 	h.sessions.Add(sessionKey, params["usr_id"])
 	writeMocaResponse(w, response)
+	return StatusOK
+}
+
+// builtinCommand returns "ping", "login", or "logout" when the normalized
+// query is one of the commands mocka handles itself, and "" otherwise.
+func builtinCommand(query string) string {
+	if strings.HasPrefix(query, "[") {
+		return ""
+	}
+	switch strings.SplitN(query, " where ", 2)[0] {
+	case "ping":
+		return "ping"
+	case "logout user":
+		return "logout"
+	}
+	if _, ok := loginInnerQuery(query); ok {
+		return "login"
+	}
+	return ""
 }
 
 func writeMocaResponse(w http.ResponseWriter, body []byte) {

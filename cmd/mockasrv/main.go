@@ -103,6 +103,7 @@ func buildMux(folder *string) (*http.ServeMux, string, error) {
 
 	mux := http.NewServeMux()
 	mocka.RegisterRoutes(mux, handler)
+	mocka.RegisterAdminRoutes(mux, handler)
 
 	return mux, f, nil
 }
