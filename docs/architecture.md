@@ -32,7 +32,8 @@ by file rather than by sub-package:
 | `response_loader.go` | `ResponseLoader` interface |
 | `response_builder.go` | Fluent `ResponseBuilder` for programmatic response construction |
 | `response_loader_inmemory_adapter.go` | `InMemoryResponseLoader` and its option functions |
-| `response_loader_yaml_file_adapter.go` | `FileResponseLoader` — loads responses from YAML + XML files on disk |
+| `response_loader_yaml_file_adapter.go` | `FileResponseLoader` — loads responses from YAML + XML or CSV files on disk |
+| `results_csv.go` | Converts CSV result files to `<moca-results>` XML (`csvResultSet`) |
 
 This keeps the consumer import surface simple: `import "github.com/castingcode/mocka"`.
 
@@ -257,7 +258,11 @@ responses:
 ### Result Files
 
 - `results` is a path relative to the responses directory
-- The file contains a `<moca-results>` XML fragment (no XML declaration needed)
+- The file contains a `<moca-results>` XML fragment (no XML declaration needed),
+  or, when the path ends in `.csv`, a CSV table that `csvResultSet` in
+  `results_csv.go` converts to that fragment at load time. The header row declares
+  columns as `name[:TYPE[:LENGTH]]` (defaults `S` and `0`), each later row is a data
+  row, and an empty cell is a null field. Like XML, CSV is file-only.
 - Omit `results` entirely for responses that return only a status and message
 
 ## Session Management

@@ -145,11 +145,16 @@ func (l *FileResponseLoader) buildEntry(r rawEntry) (Entry, error) {
 	e.StatusCode = r.RespSpec.Status
 	e.Message = r.RespSpec.Message
 	if r.RespSpec.Results != "" {
-		xmlRaw, err := os.ReadFile(filepath.Join(l.dataFolder, r.RespSpec.Results))
+		raw, err := os.ReadFile(filepath.Join(l.dataFolder, r.RespSpec.Results))
 		if err != nil {
 			return Entry{}, fmt.Errorf("reading results file %s: %w", r.RespSpec.Results, err)
 		}
-		e.ResultSet = strings.TrimSpace(string(xmlRaw))
+		e.ResultSet = strings.TrimSpace(string(raw))
+		if strings.EqualFold(filepath.Ext(r.RespSpec.Results), ".csv") {
+			if e.ResultSet, err = csvResultSet(raw); err != nil {
+				return Entry{}, fmt.Errorf("results file %s: %w", r.RespSpec.Results, err)
+			}
+		}
 	}
 	return e, nil
 }

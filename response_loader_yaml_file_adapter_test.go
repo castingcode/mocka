@@ -1,10 +1,13 @@
 package mocka
 
 import (
+	"encoding/xml"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/castingcode/mocaprotocol"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -360,5 +363,85 @@ func TestFileResponseLoader_MultipleFiles(t *testing.T) {
 				So(entries, ShouldBeEmpty)
 			})
 		})
+	})
+}
+
+func TestFileResponseLoader_CSVResults(t *testing.T) {
+
+	// loadCSV loads one exact entry whose results file holds csv, and returns
+	// the parsed result set or the load error.
+	loadCSV := func(t *testing.T, name, csv string) (mocaprotocol.MocaResults, error) {
+		dir := t.TempDir()
+		writeTestFile(t, dir, name, csv)
+		writeTestFile(t, dir, "responses.yml", "responses:\n  - match: {type: exact, query: q}\n    response: {status: 0, results: "+name+"}\n")
+		entries, err := loaderFor(dir).Load()
+		if err != nil {
+			return mocaprotocol.MocaResults{}, err
+		}
+		var results mocaprotocol.MocaResults
+		if err := xml.Unmarshal([]byte(entries[0].ResultSet), &results); err != nil {
+			t.Fatalf("generated XML does not parse: %v\n%s", err, entries[0].ResultSet)
+		}
+		if !strings.HasPrefix(entries[0].ResultSet, "<moca-results>") {
+			t.Fatalf("generated XML is not a moca-results fragment: %s", entries[0].ResultSet)
+		}
+		return results, nil
+	}
+
+	Convey("FileResponseLoader — CSV result files", t, func() {
+
+		Convey("Given a CSV file with typed columns, quoted values, and empty cells", func() {
+			results, err := loadCSV(t, "wh.csv", "\uFEFFwh_id:S:32, wh_name ,qty:i,cost:F:8\n"+
+				"WMD1,\"Main, \"\"North\"\"\",5,1.25\n"+
+				"WMD2,,-3,\n")
+
+			Convey("Then the header declares the columns with defaults for missing parts", func() {
+				So(err, ShouldBeNil)
+				So(results.Metadata.Columns, ShouldResemble, []mocaprotocol.Column{
+					{Name: "wh_id", Type: "S", Length: "32", Nullable: "true"},
+					{Name: "wh_name", Type: "S", Length: "0", Nullable: "true"},
+					{Name: "qty", Type: "I", Length: "0", Nullable: "true"},
+					{Name: "cost", Type: "F", Length: "8", Nullable: "true"},
+				})
+			})
+
+			Convey("Then each row becomes a data row, quoted values keep commas and quotes, and empty cells are null", func() {
+				So(results.Data.Rows, ShouldResemble, []mocaprotocol.Row{
+					{Fields: []mocaprotocol.Field{{Value: "WMD1"}, {Value: `Main, "North"`}, {Value: "5"}, {Value: "1.25"}}},
+					{Fields: []mocaprotocol.Field{{Value: "WMD2"}, {Null: "true"}, {Value: "-3"}, {Null: "true"}}},
+				})
+			})
+		})
+
+		Convey("Given a CSV file with only a header row and an upper-case extension", func() {
+			results, err := loadCSV(t, "EMPTY.CSV", "wh_id\n")
+
+			Convey("Then the result has its columns and no rows", func() {
+				So(err, ShouldBeNil)
+				So(results.Metadata.Columns, ShouldHaveLength, 1)
+				So(results.Data.Rows, ShouldBeEmpty)
+			})
+		})
+
+		cases := []struct{ name, csv, wantErr string }{
+			{"an empty file", "", "missing header row"},
+			{"an unknown column type", "a:X\n1\n", `header column 1: "a:X" has unknown type "X"`},
+			{"a length that is not a number", "a:S:wide\n", "has a length that is not a number"},
+			{"a header cell with no name", "a,:I\n", "header column 2"},
+			{"a non-integer value in an I column", "id,qty:I\nA,1\nB,1.5\n", `line 3, column qty: "1.5" is not an integer`},
+			{"a non-numeric value in an F column", "cost:F\nabc\n", `line 2, column cost: "abc" is not a number`},
+			{"a row with the wrong number of fields", "a,b\n1,2\n3\n", "line 3"},
+		}
+		for _, c := range cases {
+			Convey("Given "+c.name, func() {
+				_, err := loadCSV(t, "r.csv", c.csv)
+
+				Convey("Then loading fails naming the file and the problem", func() {
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldContainSubstring, "responses.yml: entry 1: results file r.csv: ")
+					So(err.Error(), ShouldContainSubstring, c.wantErr)
+				})
+			})
+		}
 	})
 }

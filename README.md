@@ -295,7 +295,34 @@ Result files contain a `<moca-results>` XML fragment. No XML declaration is need
 </moca-results>
 ```
 
-Common MOCA column types: `S` (string), `I` (integer), `F` (float), `D` (date), `R` (flag/boolean).
+Common MOCA column types: `S` (string), `I` (integer), `F` (float), `D` (date), `O` (flag/boolean).
+
+### CSV result files
+
+A `results` path ending in `.csv` is read as CSV and converted to the same `<moca-results>` XML when the responses load. CSV is easier to write and edit, for example in a spreadsheet, especially for wide result sets.
+
+```yaml
+  - match:
+      type: exact
+      query: "list locations where wh_id = 'MHE'"
+    response:
+      status: 0
+      results: list-locations-mhe.csv
+```
+
+```csv
+stoloc:S:20,arecod:S:10,useflg:I:4,maxqvl:F:8,lstdte:D:14
+A-01-01,RACK,1,100,20260115083000
+A-01-02,RACK,1,100,
+B-01-01,BULK,0,2500.5,20251201170000
+```
+
+- The **header row** declares the columns. Each cell is `name`, `name:TYPE`, or `name:TYPE:LENGTH`; `TYPE` defaults to `S` and `LENGTH` to `0`. Types are `S`, `I`, `F`, `D`, `O`, `V` (binary), and `U` (unknown). Every column is marked nullable.
+- Each **later row** is one data row with one value per column. Quote values that contain commas, quotes, or line breaks, as usual in CSV.
+- An **empty cell is a null field** (`<field null="true">`), the way MOCA treats empty strings.
+- Loading fails, naming the file and line, on an unknown type, a row with the wrong number of values, or a value in an `I` or `F` column that is not a number.
+
+CSV, like XML, is only used from files; `results` in the [admin API](#admin-api) is always XML.
 
 ---
 

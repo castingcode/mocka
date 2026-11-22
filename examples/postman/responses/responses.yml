@@ -5,3 +5,10 @@ responses:
     response:
       status: 0
       results: list-warehouses-mhe.xml
+
+  - match:
+      type: exact
+      query: "list locations where wh_id = 'MHE'"
+    response:
+      status: 0
+      results: list-locations-mhe.csv   # CSV is converted to <moca-results> at load time

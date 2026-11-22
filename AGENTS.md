@@ -10,10 +10,11 @@ Its primary use is as an imported library — consuming projects embed it to sta
 fake MOCA endpoint rather than depending on a real BlueYonder WMS server.
 The binary in `cmd/mockasrv` is a convenience wrapper; it is not the primary artifact.
 
-MOCA (Middleware Objects, Commands, and Adapters) is a scripting/command language used
-by BlueYonder warehouse management systems. MOCA commands are plain-text strings that
-follow one of three syntaxes: local syntax (`list warehouses where wh_id = 'MHE'`),
-SQL (`[select * from wh_mst]`), and Groovy (`[[println 'hello']]`).
+MOCA is a scripting/command language used by BlueYonder warehouse management systems. 
+MOCA commands are plain-text strings that follow one of three syntaxes: 
+- local syntax (`list warehouses where wh_id = 'MHE'`)
+- SQL (`[select * from wh_mst]`)
+- Groovy (`[[println 'hello']]`).
 
 ## Module
 
@@ -86,10 +87,13 @@ lookup time for incoming queries. The `normalizeQuery` function in the root pack
 
 ## Response File Format
 
-Responses are defined in YAML files (see `docs/architecture.md` for schema).
-Result sets are **always** referenced as paths to XML files — never embedded
-inline in YAML. Queries may be inline (short) or referenced as file paths
-(long queries). All paths are relative to the responses directory.
+Responses are defined in YAML files: `responses.yml` (or `responses.yaml`) plus
+any files in `responses.d/` (see `docs/architecture.md` for schema).
+Result sets are **always** referenced as paths to files — `<moca-results>` XML, or
+CSV when the path ends in `.csv` — never embedded inline in YAML. Queries may be
+inline (short) or referenced as file paths (long queries). All paths are relative
+to the responses directory. The admin API (`POST /_mocka/responses`) is the one
+place result XML is sent inline, as JSON; it does not accept CSV.
 
 ## What NOT To Do
 
@@ -98,6 +102,6 @@ inline in YAML. Queries may be inline (short) or referenced as file paths
 - Do not special-case Groovy (`[[`) or SQL (`[`) syntax in the matching logic.
   All queries go through the same matching hierarchy.
 - Do not define interfaces in the same package as the struct that satisfies them.
-- Do not embed XML result sets inline in YAML response files.
+- Do not embed result sets (XML or CSV) inline in YAML response files.
 - Do not use `log.Default()` or `fmt.Print*` for logging.
 - Do not create sub-packages within the library to organize code — use files.

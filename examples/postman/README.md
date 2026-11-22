@@ -7,17 +7,18 @@ This directory contains two [Postman](https://www.postman.com/) collections for 
 1. **Ping** — built-in health check (no session)
 2. **Login** — creates a session and captures the `session_key`
 3. **List Warehouses** — a registered command that requires a valid session
-4. **Unregistered Command** — a command with no entry in `responses.yml`, which returns status 501
-5. **Logout** — ends the session
+4. **List Locations (CSV)** — a registered command whose result set comes from a CSV file
+5. **Unregistered Command** — a command with no entry in `responses.yml`, which returns status 501
+6. **Logout** — ends the session
 
 [`mocka-admin.postman_collection.json`](mocka-admin.postman_collection.json) (**Mocka Admin API**) uses the JSON endpoints under `/_mocka/`:
 
 1. **Match Query** — shows which entry a query matches and the response it gets, without a session
 2. **Match Query (JSON, no match)** — the same endpoint with a JSON body, for a query nothing matches
 3. **List Requests** — the requests received so far and what handled each one
-4. **List Unmatched Requests** — only the queries with no registered response (request 4 of the MOCA collection)
+4. **List Unmatched Requests** — only the queries with no registered response (request 5 of the MOCA collection)
 5. **List Responses** — the registered responses with their ids
-6. **Register Response** — adds a response at runtime for the command request 4 sent
+6. **Register Response** — adds a response at runtime for the command MOCA request 5 sent
 7. **Match Registered Query** — that command now matches the new response
 8. **Delete Response** — removes it by id
 9. **Reload Responses** — re-reads `responses.yml` and drops runtime entries
@@ -38,9 +39,10 @@ Sample response data lives in [`responses/`](responses/).
 responses/
   responses.yml              # maps queries to result files
   list-warehouses-mhe.xml    # canned result for the list-warehouses request
+  list-locations-mhe.csv     # canned result for the list-locations request, as CSV
 ```
 
-The collection sends `list warehouses where wh_id = 'MHE'`, which is registered as an exact match in `responses.yml`. Edit these files to try different queries and result sets — see the [response file format](../../docs/architecture.md#response-file-format) in the architecture docs.
+The collection sends `list warehouses where wh_id = 'MHE'` and `list locations where wh_id = 'MHE'`, which are registered as exact matches in `responses.yml`; the second uses a [CSV result file](../../README.md#csv-result-files). Edit these files to try different queries and result sets — see the [response file format](../../docs/architecture.md#response-file-format) in the architecture docs.
 
 ## Run mockasrv locally
 
@@ -110,9 +112,9 @@ Then set the collection variable `baseUrl` to `http://localhost:8080`.
 1. Open Postman.
 2. **Import** → select [`mocka.postman_collection.json`](mocka.postman_collection.json) and [`mocka-admin.postman_collection.json`](mocka-admin.postman_collection.json).
 3. Confirm the collection variable `baseUrl` is `http://localhost:4500` (or your chosen port) in both collections.
-4. With `mockasrv` running, execute the **Mocka MOCA Server** requests **in order** (1 → 5), then the **Mocka Admin API** requests (1 → 10).
+4. With `mockasrv` running, execute the **Mocka MOCA Server** requests **in order** (1 → 6), then the **Mocka Admin API** requests (1 → 10).
 
-The **Login** request saves the returned `session_key` to the `sessionKey` collection variable. Requests 3 to 5 use that value automatically. The admin requests need no session. If you skip login or restart the server, run **Login** again before continuing.
+The **Login** request saves the returned `session_key` to the `sessionKey` collection variable. Requests 3 to 6 use that value automatically. The admin requests need no session. If you skip login or restart the server, run **Login** again before continuing.
 
 You can also run the collection from the CLI:
 

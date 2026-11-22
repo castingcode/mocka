@@ -160,7 +160,7 @@
         "method": "GET",
         "header": [],
         "url": "{{baseUrl}}/_mocka/requests?unmatched=true",
-        "description": "Only the queries that no registered response matched: the list of entries to add to responses.yml. After the MOCA collection, this includes its \"4. Unregistered Command\"."
+        "description": "Only the queries that no registered response matched: the list of entries to add to responses.yml. After the MOCA collection, this includes its \"5. Unregistered Command\"."
       },
       "response": []
     },
@@ -306,7 +306,7 @@
               "const json = pm.response.json();",
               "",
               "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-              "pm.test('reloaded the entry in responses.yml', () => pm.expect(json.count).to.eql(1));"
+              "pm.test('reloaded the entries in responses.yml', () => pm.expect(json.count).to.eql(2));"
             ]
           }
         }

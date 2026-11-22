@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Mocka MOCA Server",
-    "description": "Exercises the built-in ping, login, and logout commands and a registered MOCA query against a running mockasrv instance. The admin endpoints are in the separate \"Mocka Admin API\" collection.\n\nRun the requests in order:\n1. Ping — no session required\n2. Login — saves the session key to a collection variable\n3. List Warehouses — requires the session key from login\n4. Unregistered Command — returns 501 and is logged as unmatched\n5. Logout — ends the session",
+    "description": "Exercises the built-in ping, login, and logout commands and a registered MOCA query against a running mockasrv instance. The admin endpoints are in the separate \"Mocka Admin API\" collection.\n\nRun the requests in order:\n1. Ping — no session required\n2. Login — saves the session key to a collection variable\n3. List Warehouses — requires the session key from login\n4. List Locations (CSV) — a registered command whose result set is a CSV file\n5. Unregistered Command — returns 501 and is logged as unmatched\n6. Logout — ends the session",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -183,7 +183,82 @@
       "response": []
     },
     {
-      "name": "4. Unregistered Command",
+      "name": "4. List Locations (CSV)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const sessionKey = pm.collectionVariables.get('sessionKey');",
+              "if (!sessionKey) {",
+              "    throw new Error('sessionKey is empty — run \"2. Login\" first.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = xml2Json(pm.response.text());",
+              "const root = json['moca-response'];",
+              "const results = root['moca-results'];",
+              "const cols = [].concat(results.metadata.column).map(c => (c.$ || c));",
+              "const rows = [].concat(results.data.row).map(r => [].concat(r.field));",
+              "",
+              "function fieldValue(field) {",
+              "    if (typeof field === 'string') return field;",
+              "    if (field && field._ !== undefined) return field._;",
+              "    if (field && field._text !== undefined) return field._text;",
+              "    return '';",
+              "}",
+              "function isNull(field) {",
+              "    return !!(field && field.$ && field.$.null === 'true');",
+              "}",
+              "",
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('MOCA status 0', () => pm.expect(root.status).to.eql('0'));",
+              "pm.test('columns come from the CSV header', () => {",
+              "    pm.expect(cols.map(c => c.name)).to.eql(['stoloc', 'arecod', 'useflg', 'maxqvl', 'lstdte']);",
+              "    pm.expect(cols.map(c => c.type)).to.eql(['S', 'S', 'I', 'F', 'D']);",
+              "    pm.expect(cols[0].length).to.eql('20');",
+              "});",
+              "pm.test('three rows', () => pm.expect(rows).to.have.lengthOf(3));",
+              "pm.test('values come from the CSV rows', () => {",
+              "    pm.expect(fieldValue(rows[0][0])).to.eql('A-01-01');",
+              "    pm.expect(fieldValue(rows[2][3])).to.eql('2500.5');",
+              "});",
+              "pm.test('an empty CSV cell is a null field', () => pm.expect(isNull(rows[1][4])).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/moca-xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<moca-request autocommit=\"true\">\n  <environment>\n    <var name=\"SESSION_KEY\" value=\"{{sessionKey}}\"></var>\n  </environment>\n  <query><![CDATA[list locations where wh_id = 'MHE']]></query>\n</moca-request>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/service",
+        "description": "Registered response whose result set comes from responses/list-locations-mhe.csv instead of an XML file. Mocka converts the CSV to <moca-results> when it loads: the header declares the columns as name:TYPE:LENGTH, and an empty cell is a null field."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Unregistered Command",
       "event": [
         {
           "listen": "prerequest",
@@ -234,7 +309,7 @@
       "response": []
     },
     {
-      "name": "5. Logout",
+      "name": "6. Logout",
       "event": [
         {
           "listen": "prerequest",
