@@ -309,6 +309,21 @@ func TestAdmin_Responses(t *testing.T) {
 			})
 		})
 
+		Convey("When I register a command response with args", func() {
+			w := adminDo(mux, "POST", "/_mocka/responses", `{
+				"match": {"type": "command", "command": "list orders", "args": {"ORDNUM": "X1"}},
+				"response": {"status": 0}
+			}`)
+
+			Convey("Then a query with those args in any order matches it, and match shows the command and args", func() {
+				So(w.Code, ShouldEqual, http.StatusCreated)
+				result := resolve("list orders where wh_id = 'MHE' and ordnum = 'X1'")
+				So(result.Match.Type, ShouldEqual, "command")
+				So(result.Match.Command, ShouldEqual, "list orders")
+				So(result.Match.Args, ShouldResemble, map[string]string{"ordnum": "x1"})
+			})
+		})
+
 		Convey("When I register an invalid response", func() {
 			cases := []struct{ name, body, wantErr string }{
 				{"an unknown match type", `{"match": {"type": "exat", "query": "a"}}`, `unknown match type "exat"`},

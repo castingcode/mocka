@@ -113,6 +113,17 @@ func TestInMemoryResponseLoader(t *testing.T) {
 			So(entries[2].MatchType, ShouldEqual, MatchTypePublishData)
 		})
 
+		Convey("WithCommandMatch normalizes the command, keys, and values so queries in any form match", func() {
+			loader := NewInMemoryResponseLoader(
+				WithCommandMatch("List  Warehouses", map[string]string{"WH_ID": "MHE"}, NewResponse(2).Build()),
+				WithCommandMatch("list warehouses", nil, NewResponse(1).Build()),
+			)
+			lookup, err := NewResponseLookup(loader)
+			So(err, ShouldBeNil)
+			So(lookup.GetResponse(normalizeQuery("LIST WAREHOUSES where x = 1 and wh_id = 'mhe'")).StatusCode, ShouldEqual, 2)
+			So(lookup.GetResponse(normalizeQuery("list warehouses where wh_id = 'B'")).StatusCode, ShouldEqual, 1)
+		})
+
 		Convey("WithEntries and sugar options can be combined freely", func() {
 			prebuilt := []Entry{
 				{MatchType: MatchTypeExact, Query: "list users", StatusCode: StatusOK},

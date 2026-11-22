@@ -302,3 +302,69 @@ func TestMatchQuery_MatchPriority(t *testing.T) {
 		})
 	})
 }
+
+func TestMatchQuery_CommandMatch(t *testing.T) {
+
+	logger := slog.Default()
+	status := func(query string, entries []Entry) int {
+		return matchQuery(normalizeQuery(query), entries, logger).StatusCode
+	}
+
+	Convey("command matching", t, func() {
+
+		entries := []Entry{
+			{MatchType: MatchTypeCommand, Command: "list warehouses", Args: map[string]string{}, StatusCode: 1},
+			{MatchType: MatchTypeCommand, Command: "list warehouses", Args: map[string]string{"wh_id": "mhe", "client": "acme"}, StatusCode: 3},
+			{MatchType: MatchTypeCommand, Command: "list warehouses", Args: map[string]string{"wh_id": "mhe"}, StatusCode: 2},
+		}
+
+		Convey("Arguments match in any order, extra arguments are ignored, and the entry with the most matching args wins", func() {
+			So(status("list warehouses where client = 'ACME' and x = 1 and wh_id = 'MHE'", entries), ShouldEqual, 3)
+			So(status("list warehouses where wh_id = \"MHE\" and x = 1", entries), ShouldEqual, 2)
+		})
+
+		Convey("An entry without args is the fallback for other arguments and for no arguments", func() {
+			So(status("list warehouses where wh_id = 'OTHER'", entries), ShouldEqual, 1)
+			So(status("list warehouses", entries), ShouldEqual, 1)
+		})
+
+		Convey("The command name must match exactly, not as a prefix", func() {
+			short := []Entry{{MatchType: MatchTypeCommand, Command: "list", Args: map[string]string{}, StatusCode: 1}}
+			So(status("list warehouses", short), ShouldEqual, StatusCommandNotFound)
+			So(status("list warehouse where wh_id = 'MHE'", entries), ShouldEqual, StatusCommandNotFound)
+		})
+
+		Convey("Quoted values keep ' and ', '=', and doubled quotes, and unquoted values match too", func() {
+			quoted := []Entry{
+				{MatchType: MatchTypeCommand, Command: "create note", Args: map[string]string{"txt": "salt and pepper = 1", "who": "o'brien", "qty": "5"}, StatusCode: 7},
+			}
+			So(status("create note where qty = 5 and txt = 'salt and pepper=1' and who = 'O''Brien'", quoted), ShouldEqual, 7)
+			So(status("create note where qty = 5 and txt = 'salt' and who = 'O''Brien'", quoted), ShouldEqual, StatusCommandNotFound)
+		})
+
+		Convey("An arg registered with an empty value requires the argument to be present", func() {
+			empty := []Entry{{MatchType: MatchTypeCommand, Command: "list x", Args: map[string]string{"a": ""}, StatusCode: 1}}
+			So(status("list x where a = ''", empty), ShouldEqual, 1)
+			So(status("list x where b = ''", empty), ShouldEqual, StatusCommandNotFound)
+		})
+
+		Convey("Pipelines, command blocks, and SQL are not command matched and fall through to prefix", func() {
+			withPrefix := append([]Entry{{MatchType: MatchTypePrefix, Prefix: "list warehouses", StatusCode: 9}}, entries...)
+			So(status("list warehouses where wh_id = 'MHE' | list orders", withPrefix), ShouldEqual, 9)
+			So(status("list warehouses where wh_id = 'MHE'; list orders", withPrefix), ShouldEqual, 9)
+			sql := []Entry{{MatchType: MatchTypeCommand, Command: "select", Args: map[string]string{}, StatusCode: 1}}
+			So(status("[select * from wh_mst]", sql), ShouldEqual, StatusCommandNotFound)
+		})
+
+		Convey("Exact beats command, and command beats prefix", func() {
+			mixed := []Entry{
+				{MatchType: MatchTypePrefix, Prefix: "list warehouses", StatusCode: 9},
+				{MatchType: MatchTypeCommand, Command: "list warehouses", Args: map[string]string{"wh_id": "mhe"}, StatusCode: 2},
+				{MatchType: MatchTypeExact, Query: normalizeQuery("list warehouses where wh_id = 'MHE'"), StatusCode: 0},
+			}
+			So(status("list warehouses where wh_id = 'MHE'", mixed), ShouldEqual, 0)
+			So(status("list warehouses where x = 1 and wh_id = 'MHE'", mixed), ShouldEqual, 2)
+			So(status("list warehouses where wh_id = 'B'", mixed), ShouldEqual, 9)
+		})
+	})
+}

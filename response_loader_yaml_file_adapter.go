@@ -22,6 +22,8 @@ type matchSpec struct {
 	Inner     string            `yaml:"inner,omitempty" json:"inner,omitempty"`
 	Context   map[string]string `yaml:"context,omitempty" json:"context,omitempty"`
 	Prefix    string            `yaml:"prefix,omitempty" json:"prefix,omitempty"`
+	Command   string            `yaml:"command,omitempty" json:"command,omitempty"`
+	Args      map[string]string `yaml:"args,omitempty" json:"args,omitempty"`
 }
 
 type responseSpec struct {
@@ -172,6 +174,8 @@ func matchEntry(m matchSpec, readQueryFile func(name string) (string, error)) (E
 		"inner":      m.Inner != "",
 		"context":    len(m.Context) > 0,
 		"prefix":     m.Prefix != "",
+		"command":    m.Command != "",
+		"args":       len(m.Args) > 0,
 	}
 	var allowed []string
 	switch e.MatchType {
@@ -212,10 +216,29 @@ func matchEntry(m matchSpec, readQueryFile func(name string) (string, error)) (E
 		if e.Prefix == "" {
 			return Entry{}, fmt.Errorf("prefix match needs a non-empty prefix")
 		}
+	case MatchTypeCommand:
+		allowed = []string{"command", "args"}
+		e.Command = normalizeQuery(m.Command)
+		if e.Command == "" {
+			return Entry{}, fmt.Errorf("command match needs a non-empty command")
+		}
+		if cmd, ok := parseCommand(e.Command); !ok || cmd.name != e.Command {
+			return Entry{}, fmt.Errorf("command %q must be only a command name, such as \"list warehouses\"; put arguments in args", m.Command)
+		}
+		e.Args = make(map[string]string, len(m.Args))
+		for k, v := range m.Args {
+			key := strings.ToLower(strings.TrimSpace(k))
+			if !argName.MatchString(key) {
+				return Entry{}, fmt.Errorf("args key %q is not an argument name", k)
+			}
+			// Normalize like the incoming query, whose arguments are compared
+			// after normalization and unquoting.
+			e.Args[key] = normalizeQuery(v)
+		}
 	default:
-		return Entry{}, fmt.Errorf("unknown match type %q (want exact, publish_data, or prefix)", m.Type)
+		return Entry{}, fmt.Errorf("unknown match type %q (want exact, publish_data, command, or prefix)", m.Type)
 	}
-	for _, field := range []string{"query", "query_file", "inner", "context", "prefix"} {
+	for _, field := range []string{"query", "query_file", "inner", "context", "prefix", "command", "args"} {
 		if used[field] && !slices.Contains(allowed, field) {
 			return Entry{}, fmt.Errorf("%s is not used by %s matches", field, e.MatchType)
 		}
@@ -232,11 +255,12 @@ func duplicateKey(e Entry) string {
 	case MatchTypePrefix:
 		return "prefix\x00" + e.Prefix
 	default:
-		pairs := make([]string, 0, len(e.Context))
-		for k, v := range e.Context {
+		name, values := e.contextual()
+		pairs := make([]string, 0, len(values))
+		for k, v := range values {
 			pairs = append(pairs, k+"="+v)
 		}
 		slices.Sort(pairs)
-		return "publish_data\x00" + e.Inner + "\x00" + strings.Join(pairs, "\x00")
+		return string(e.MatchType) + "\x00" + name + "\x00" + strings.Join(pairs, "\x00")
 	}
 }

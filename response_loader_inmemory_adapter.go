@@ -83,6 +83,29 @@ func WithPublishDataMatch(inner string, resp Response) InMemoryResponseLoaderOpt
 	}
 }
 
+// WithCommandMatch appends a command entry that matches a single local-syntax
+// command named command, such as "list warehouses", when the query's where
+// clause has every key/value pair in args, in any order and alongside any
+// other arguments. With nil or empty args it matches the command with any
+// arguments. When several command entries match, the one with the most args
+// wins. The command, keys, and values are normalized before storage.
+func WithCommandMatch(command string, args map[string]string, resp Response) InMemoryResponseLoaderOption {
+	normalized := make(map[string]string, len(args))
+	for k, v := range args {
+		normalized[strings.ToLower(strings.TrimSpace(k))] = normalizeQuery(v)
+	}
+	return func(l *InMemoryResponseLoader) {
+		l.entries = append(l.entries, Entry{
+			MatchType:  MatchTypeCommand,
+			Command:    normalizeQuery(command),
+			Args:       normalized,
+			StatusCode: resp.StatusCode,
+			Message:    resp.Message,
+			ResultSet:  resp.ResultSet,
+		})
+	}
+}
+
 // WithContextualPublishDataMatch appends a contextual publish-data entry that
 // only matches when the incoming query carries all of the specified context
 // key/value pairs. Context values are lowercased for consistent comparison

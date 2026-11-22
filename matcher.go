@@ -3,17 +3,19 @@ package mocka
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 )
 
-// matchQuery implements the three-step matching hierarchy defined in
+// matchQuery implements the matching hierarchy defined in
 // docs/architecture.md. It is the single entry point for query resolution.
 //
 // Order:
 //  1. Exact match
-//  2. Publish-data contextual match (with context, then without)
-//  3. Prefix match (longest prefix wins)
-//  4. No match → StatusCommandNotFound
+//  2. Publish-data match (most matching context pairs wins; no context is the fallback)
+//  3. Command match (most matching args wins; no args is the fallback)
+//  4. Prefix match (longest prefix wins)
+//  5. No match → StatusCommandNotFound
 func matchQuery(query string, entries []Entry, logger *slog.Logger) Response {
 	r, _ := resolveQuery(query, entries, logger)
 	return r
@@ -32,21 +34,23 @@ func resolveQuery(query string, entries []Entry, logger *slog.Logger) (Response,
 		}
 	}
 
-	// 2. Publish-data contextual match
+	// 2. Publish-data match
 	if pd, ok := parsePublishData(query); ok {
-		// Contextual match (entry has context that matches)
-		if e := findPublishData(pd, entries, true); e != nil {
-			logger.Debug("publish_data contextual match", "inner", pd.inner)
-			return e.response(), e
-		}
-		// Generic fallback (entry has no context)
-		if e := findPublishData(pd, entries, false); e != nil {
-			logger.Debug("publish_data generic match", "inner", pd.inner)
+		if e := findMostSpecific(entries, MatchTypePublishData, pd.inner, pd.context); e != nil {
+			logger.Debug("publish_data match", "inner", pd.inner, "context", e.Context)
 			return e.response(), e
 		}
 	}
 
-	// 3. Prefix match (the longest matching prefix wins)
+	// 3. Command match
+	if cmd, ok := parseCommand(query); ok {
+		if e := findMostSpecific(entries, MatchTypeCommand, cmd.name, cmd.args); e != nil {
+			logger.Debug("command match", "command", cmd.name, "args", e.Args)
+			return e.response(), e
+		}
+	}
+
+	// 4. Prefix match (the longest matching prefix wins)
 	var best *Entry
 	for i, e := range entries {
 		if e.MatchType == MatchTypePrefix && strings.HasPrefix(query, e.Prefix) &&
@@ -59,7 +63,7 @@ func resolveQuery(query string, entries []Entry, logger *slog.Logger) (Response,
 		return best.response(), best
 	}
 
-	// 4. No match
+	// 5. No match
 	logger.Debug("no match", "query", query)
 	return Response{
 		StatusCode: StatusCommandNotFound,
@@ -104,36 +108,104 @@ func parsePublishData(query string) (publishDataParsed, bool) {
 	return publishDataParsed{inner: inner, context: ctx}, true
 }
 
-// findPublishData returns the publish_data entry that matches pd, or nil.
-// When withContext is true it only considers entries that have context and
-// whose context key/value pairs all appear in pd.context (order-insensitive);
-// the entry with the most context pairs wins, and the first registered wins a tie.
-// When withContext is false it only considers entries without context.
-func findPublishData(pd publishDataParsed, entries []Entry, withContext bool) *Entry {
+// findMostSpecific returns the entry of type t whose name is name and whose
+// key/value pairs all appear in got (order-insensitive; extra pairs in got are
+// ignored), or nil. The entry with the most pairs wins, so an entry without
+// pairs is the fallback; the first registered wins a tie.
+func findMostSpecific(entries []Entry, t MatchType, name string, got map[string]string) *Entry {
 	var best *Entry
-	for i, e := range entries {
-		if e.MatchType != MatchTypePublishData || e.Inner != pd.inner {
+	bestPairs := -1
+	for i := range entries {
+		e := &entries[i]
+		if e.MatchType != t {
 			continue
 		}
-		hasCtx := len(e.Context) > 0
-		if withContext && hasCtx && contextMatches(e.Context, pd.context) &&
-			(best == nil || len(e.Context) > len(best.Context)) {
-			best = &entries[i]
-		}
-		if !withContext && !hasCtx {
-			return &entries[i]
+		entryName, pairs := e.contextual()
+		if entryName == name && pairsMatch(pairs, got) && len(pairs) > bestPairs {
+			best, bestPairs = e, len(pairs)
 		}
 	}
 	return best
 }
 
-// contextMatches returns true if every key/value pair in registered is present
-// in parsed (order-insensitive; extra keys in parsed are ignored).
-func contextMatches(registered, parsed map[string]string) bool {
+// pairsMatch returns true if every key/value pair in registered is present in
+// got.
+func pairsMatch(registered, got map[string]string) bool {
 	for k, v := range registered {
-		if parsed[k] != v {
+		if gv, ok := got[k]; !ok || gv != v {
 			return false
 		}
 	}
 	return true
+}
+
+// parsedCommand holds a single local-syntax command and its arguments.
+type parsedCommand struct {
+	name string
+	args map[string]string
+}
+
+var (
+	commandName = regexp.MustCompile(`^[a-z0-9_]+( [a-z0-9_]+)*$`)
+	argName     = regexp.MustCompile(`^@?[a-z0-9_.]+$`)
+)
+
+// parseCommand parses a normalized query of the form
+// "<command> [where <name> = <value> [and ...]]". It returns false for
+// anything else, such as pipelines, command blocks, SQL, or Groovy.
+// Conditions that are not "<name> = <value>" are ignored; quoted values are
+// unquoted.
+func parseCommand(query string) (parsedCommand, bool) {
+	name, where, hasWhere := strings.Cut(query, " where ")
+	if !commandName.MatchString(name) {
+		return parsedCommand{}, false
+	}
+	cmd := parsedCommand{name: name, args: make(map[string]string)}
+	if !hasWhere {
+		return cmd, true
+	}
+	conds, ok := splitConditions(where)
+	if !ok {
+		return parsedCommand{}, false
+	}
+	for _, cond := range conds {
+		k, v, found := strings.Cut(cond, " = ")
+		if found && argName.MatchString(k) {
+			cmd.args[k] = unquoteValue(v)
+		}
+	}
+	return cmd, true
+}
+
+// splitConditions splits a where clause on " and " outside single quotes.
+// It returns false when the clause continues into another command.
+func splitConditions(where string) ([]string, bool) {
+	var conds []string
+	start, inQuote := 0, false
+	for i := 0; i < len(where); i++ {
+		switch c := where[i]; {
+		case c == '\'':
+			inQuote = !inQuote // a doubled '' inside a string toggles twice
+		case inQuote:
+		case strings.ContainsRune("|;&{}[]", rune(c)):
+			return nil, false
+		case strings.HasPrefix(where[i:], " and "):
+			conds = append(conds, where[start:i])
+			i += len(" and ") - 1
+			start = i + 1
+		}
+	}
+	if inQuote {
+		return nil, false
+	}
+	return append(conds, where[start:]), true
+}
+
+// unquoteValue strips the single quotes around a MOCA string value and
+// unescapes doubled quotes inside it. Other values are returned unchanged.
+func unquoteValue(v string) string {
+	if len(v) >= 2 && v[0] == '\'' && v[len(v)-1] == '\'' {
+		return strings.ReplaceAll(v[1:len(v)-1], "''", "'")
+	}
+	return v
 }

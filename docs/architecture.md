@@ -147,6 +147,7 @@ loader := mocka.NewInMemoryResponseLoader(
     mocka.WithExactMatch("list warehouses where wh_id = 'MHE'", resp),
     mocka.WithPrefixMatch("list warehouses", fallbackResp),
     mocka.WithPublishDataMatch("do thing", resp),
+    mocka.WithCommandMatch("list orders", map[string]string{"ordnum": "ORD001"}, resp),
     mocka.WithContextualPublishDataMatch("do thing", map[string]string{"wh_id": "MHE"}, resp),
     mocka.WithEntries(sharedFixtures),
 )
@@ -203,7 +204,38 @@ The matcher:
 
 Nesting (multiple levels of `publish data`) is not supported at this time.
 
-### 3. Prefix Match
+### 3. Command Match
+
+Applies when the query is a single local-syntax command:
+
+```
+<command> [where <name> = <value> [and <name> = <value> ...]]
+```
+
+`parseCommand` takes the command name (words only) before ` where ` and splits the
+where clause on ` and ` outside single quotes, unquoting string values. It rejects
+queries that continue into another command (`|`, `;`, `&`, `{`, `}`, `[`, `]` outside
+quotes) or whose name is not plain words, such as SQL and Groovy, so those skip to
+prefix matching. Conditions that are not `<name> = <value>` are ignored.
+
+A `type: command` entry matches when its `command` equals the command name and every
+`args` pair appears among the arguments (order-insensitive; extra arguments are
+ignored). The entry with the most args wins, so an entry without args is the
+fallback; the first registered breaks a tie. This uses the same `findMostSpecific`
+as publish-data matching.
+
+```yaml
+- match:
+    type: command
+    command: "list orders"
+    args:
+      ordnum: ORD001
+```
+
+Registered args keys are lowercased and values normalized with `normalizeQuery`, so
+they compare equal to arguments taken from the normalized incoming query.
+
+### 4. Prefix Match
 
 The normalized query starts with a registered prefix string.
 
@@ -217,7 +249,7 @@ This matches `list warehouses where wh_id = 'abc'` and any other query beginning
 with that string after normalization. When several prefixes match, the longest one
 wins, independent of registration order.
 
-### 4. No Match
+### 5. No Match
 
 Returns `StatusCommandNotFound` (501). No special handling for SQL or Groovy syntax —
 they fall through the same hierarchy.
@@ -263,6 +295,15 @@ responses:
     response:
       status: 0
       results: do-thing-generic.xml
+
+  - match:
+      type: command
+      command: "list orders"                         # command name only
+      args:                                          # optional; omit to match any arguments
+        ordnum: ORD001
+    response:
+      status: 0
+      results: orders-ord001.xml
 
   - match:
       type: prefix

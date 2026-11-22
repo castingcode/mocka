@@ -47,13 +47,14 @@ func RegisterAdminRoutes(router Router, handler AdminHandlerInterface) {
 // built-in commands.
 type MatchInfo struct {
 	ID      int               `json:"id,omitempty"` // identifies a registered entry, e.g. for DELETE /_mocka/responses/{id}
-	Type    string            `json:"type"`         // exact, publish_data, prefix, or builtin
+	Type    string            `json:"type"`         // exact, publish_data, command, prefix, or builtin
 	Query   string            `json:"query,omitempty"`
 	Inner   string            `json:"inner,omitempty"`
 	Context map[string]string `json:"context,omitempty"`
 	Prefix  string            `json:"prefix,omitempty"`
-	Command string            `json:"command,omitempty"` // builtin only: ping, login, or logout
-	Source  string            `json:"source,omitempty"`  // where the entry is defined
+	Command string            `json:"command,omitempty"` // command name; for builtin: ping, login, or logout
+	Args    map[string]string `json:"args,omitempty"`
+	Source  string            `json:"source,omitempty"` // where the entry is defined
 }
 
 // RequestRecord is one MOCA request received by a MocaRequestHandler.
@@ -77,6 +78,8 @@ func matchInfo(e *Entry) *MatchInfo {
 		Inner:   e.Inner,
 		Context: e.Context,
 		Prefix:  e.Prefix,
+		Command: e.Command,
+		Args:    e.Args,
 		Source:  e.Source,
 	}
 }

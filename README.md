@@ -129,6 +129,20 @@ mocka.WithContextualPublishDataMatch(
 )
 ```
 
+#### `WithCommandMatch`
+
+Matches a single command by name and arguments: every key/value pair in `args` must appear in the query's `where` clause, in any order and alongside any other arguments. Pass `nil` args to match the command with any arguments. When several command entries match, the one with the most args wins, so a `nil`-args entry is the fallback.
+
+```go
+mocka.WithCommandMatch(
+    "list warehouses",
+    map[string]string{"wh_id": "MHE"},
+    mocka.NewResponse(mocka.StatusOK).WithResultSet(mheXML).Build(),
+)
+```
+
+This matches `list warehouses where wh_id = 'MHE'`, `list warehouses where wh_id = 'MHE' and bldg_id = 'B1'`, and `list warehouses where bldg_id = 'B1' and wh_id = 'MHE'`.
+
 #### `WithEntries`
 
 Low-level escape hatch for passing a pre-built `[]mocka.Entry` slice — useful when sharing fixtures across tests.
@@ -220,10 +234,11 @@ Every `*.yml` and `*.yaml` file in `responses.d/` uses the same schema as `respo
 Response files are validated when the server starts, and any problem stops it with an error naming the file and entry:
 
 - unknown `match.type` values and misspelled field names
-- a missing `query`/`query_file`, `inner`, or `prefix` for the entry's type, or both `query` and `query_file`
+- a missing `query`/`query_file`, `inner`, `command`, or `prefix` for the entry's type, or both `query` and `query_file`
+- a `command` that is more than a command name (put arguments in `args`), or an `args` key that is not an argument name
 - fields that belong to a different match type (for example `query` on a `prefix` entry)
 - missing `query_file` or `results` files
-- duplicate entries — the same exact query, prefix, or publish_data inner and context — within or across files
+- duplicate entries — the same exact query, prefix, publish_data inner and context, or command and args — within or across files
 
 Run `mockasrv -validate -folder ./responses` to check the files without starting the server. If no response files are found, the server still starts and logs a warning.
 
@@ -288,6 +303,23 @@ responses:
     response:
       status: 0
       results: do-thing-generic.xml
+
+  - match:
+      type: command
+      command: "list orders"                          # the command name only
+      args:                                           # optional — every pair must be in the where clause
+        wh_id: MHE                                    # in any order; extra arguments are ignored
+        ordnum: ORD001
+    response:
+      status: 0
+      results: orders-mhe-ord001.xml
+
+  - match:
+      type: command
+      command: "list orders"                          # no args = matches the command with any arguments
+    response:
+      status: 510
+      message: No Data Found
 
   - match:
       type: prefix
@@ -372,8 +404,11 @@ For each incoming query, Mocka evaluates registered entries in this order, retur
 1. **Exact** — the normalized query equals a registered `type: exact` entry
 2. **Publish-data contextual** — the query is a `publish data where ... | { ... }` form, and a `type: publish_data` entry matches both the inner command and all of the entry's context key/value pairs; when several match, the one with the most context pairs wins (the first listed breaks a tie)
 3. **Publish-data generic** — same form, but a `type: publish_data` entry with no context matches the inner command alone
-4. **Prefix** — the normalized query starts with a registered `type: prefix` string; when several prefixes match, the longest wins regardless of file order
-5. **No match** — returns status `501` (command not found)
+4. **Command** — the query is a single command, `<command> [where <name> = <value> and ...]`, and a `type: command` entry has the same command name and all of its `args` among the arguments, in any order; when several match, the one with the most args wins, and an entry without args is the fallback
+5. **Prefix** — the normalized query starts with a registered `type: prefix` string; when several prefixes match, the longest wins regardless of file order
+6. **No match** — returns status `501` (command not found)
+
+Command matching compares argument values after normalization, with the quotes around string values removed, so `wh_id = 'MHE'`, `wh_id = "mhe"`, and `args: {wh_id: MHE}` all match. Quoted values may contain `and` or `=`. Conditions other than `<name> = <value>` are ignored. Pipelines (`|`), command blocks, `;`, `&`, SQL, and Groovy are not single commands, so they skip command matching and go on to prefix matching. Use `type: exact` or `type: prefix` for those.
 
 ---
 

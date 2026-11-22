@@ -2,6 +2,7 @@ package mocka
 
 import (
 	"encoding/xml"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -443,5 +444,74 @@ func TestFileResponseLoader_CSVResults(t *testing.T) {
 				})
 			})
 		}
+	})
+}
+
+func TestFileResponseLoader_Command(t *testing.T) {
+
+	Convey("FileResponseLoader — command entries", t, func() {
+
+		Convey("Given a command entry with mixed-case keys, quoted text, and a number", func() {
+			dir := t.TempDir()
+			writeTestFile(t, dir, "responses.yml", `
+responses:
+  - match:
+      type: command
+      command: "LIST  Warehouses"
+      args: {WH_ID: MHE, qty: 5, txt: "Salt  and pepper=1"}
+    response: {status: 0}
+`)
+			entries, err := loaderFor(dir).Load()
+
+			Convey("Then the command, keys, and values are normalized like an incoming query", func() {
+				So(err, ShouldBeNil)
+				So(entries[0].Command, ShouldEqual, "list warehouses")
+				So(entries[0].Args, ShouldResemble, map[string]string{"wh_id": "mhe", "qty": "5", "txt": "salt and pepper = 1"})
+			})
+
+			Convey("Then a query with those arguments in another order resolves to it", func() {
+				q := normalizeQuery("list warehouses where txt = 'salt and pepper=1' and qty = 5 and wh_id = 'MHE'")
+				_, e := resolveQuery(q, entries, slog.Default())
+				So(e, ShouldNotBeNil)
+				So(e.Source, ShouldEqual, "responses.yml entry 1")
+			})
+		})
+
+		cases := []struct{ name, match, wantErr string }{
+			{"a command with a where clause", "{type: command, command: \"list warehouses where wh_id = 'MHE'\"}", `command "list warehouses where wh_id = 'MHE'" must be only a command name`},
+			{"a command that is not a command name", "{type: command, command: \"[select 1]\"}", `command "[select 1]" must be only a command name`},
+			{"a missing command", "{type: command, args: {a: b}}", "command match needs a non-empty command"},
+			{"an args key that is not an argument name", "{type: command, command: list x, args: {\"wh id\": b}}", `args key "wh id" is not an argument name`},
+			{"args on another match type", "{type: prefix, prefix: list, args: {a: b}}", "args is not used by prefix matches"},
+		}
+		for _, c := range cases {
+			Convey("Given "+c.name, func() {
+				dir := t.TempDir()
+				writeTestFile(t, dir, "responses.yml", "responses:\n  - match: "+c.match+"\n    response: {status: 0}\n")
+				_, err := loaderFor(dir).Load()
+
+				Convey("Then loading fails with the problem", func() {
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldContainSubstring, "entry 1: "+c.wantErr)
+				})
+			})
+		}
+
+		Convey("Given two command entries with the same args in a different order and case", func() {
+			dir := t.TempDir()
+			writeTestFile(t, dir, "responses.yml", `
+responses:
+  - match: {type: command, command: list x, args: {a: "1", b: "2"}}
+    response: {status: 0}
+  - match: {type: command, command: LIST X, args: {B: "2", A: "1"}}
+    response: {status: 0}
+`)
+			_, err := loaderFor(dir).Load()
+
+			Convey("Then they are duplicates", func() {
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldContainSubstring, "entry 2: duplicate command match (first defined in responses.yml entry 1)")
+			})
+		})
 	})
 }
