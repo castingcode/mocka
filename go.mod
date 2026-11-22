@@ -1,6 +1,6 @@
 module github.com/castingcode/mocka
 
-go 1.26.1
+go 1.27.4
 
 require (
 	github.com/castingcode/mocaprotocol v0.1.1

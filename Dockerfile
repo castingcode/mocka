@@ -1,4 +1,4 @@
-FROM golang:1.26.1-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 RUN echo "mocka:x:65534:65534:mocka:/:" > /etc/passwd.minimal
 RUN mkdir -p /out/responses && chown 65534:65534 /out/responses
 WORKDIR /app
