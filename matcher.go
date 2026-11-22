@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -13,7 +14,7 @@ import (
 // Order:
 //  1. Exact match
 //  2. Publish-data match (most matching context pairs wins; no context is the fallback)
-//  3. Command match (most matching args wins; no args is the fallback)
+//  3. Command match (most specific args win, with * wildcards; no args is the fallback)
 //  4. Prefix match (longest prefix wins)
 //  5. No match → StatusCommandNotFound
 func matchQuery(query string, entries []Entry, logger *slog.Logger) Response {
@@ -110,33 +111,85 @@ func parsePublishData(query string) (publishDataParsed, bool) {
 
 // findMostSpecific returns the entry of type t whose name is name and whose
 // key/value pairs all appear in got (order-insensitive; extra pairs in got are
-// ignored), or nil. The entry with the most pairs wins, so an entry without
-// pairs is the fallback; the first registered wins a tie.
+// ignored), or nil. In command entries, a "*" in a value matches any run of
+// characters. The most specific entry wins: the most pairs, then the most
+// exact (non-wildcard) values, then the most fixed characters in wildcard
+// values. An entry without pairs is therefore the fallback, and the first
+// registered wins a tie.
 func findMostSpecific(entries []Entry, t MatchType, name string, got map[string]string) *Entry {
+	wildcards := t == MatchTypeCommand
 	var best *Entry
-	bestPairs := -1
+	var bestScore [3]int
 	for i := range entries {
 		e := &entries[i]
 		if e.MatchType != t {
 			continue
 		}
 		entryName, pairs := e.contextual()
-		if entryName == name && pairsMatch(pairs, got) && len(pairs) > bestPairs {
-			best, bestPairs = e, len(pairs)
+		if entryName != name || !pairsMatch(pairs, got, wildcards) {
+			continue
+		}
+		if score := specificity(pairs, wildcards); best == nil || slices.Compare(score[:], bestScore[:]) > 0 {
+			best, bestScore = e, score
 		}
 	}
 	return best
 }
 
+// specificity ranks matching pairs: the number of pairs, the number of exact
+// values, and the fixed characters in wildcard values.
+func specificity(pairs map[string]string, wildcards bool) [3]int {
+	score := [3]int{len(pairs), 0, 0}
+	for _, v := range pairs {
+		if wildcards && strings.Contains(v, "*") {
+			score[2] += len(v) - strings.Count(v, "*")
+		} else {
+			score[1]++
+		}
+	}
+	return score
+}
+
 // pairsMatch returns true if every key/value pair in registered is present in
-// got.
-func pairsMatch(registered, got map[string]string) bool {
+// got. With wildcards, a "*" in a registered value matches any run of
+// characters.
+func pairsMatch(registered, got map[string]string, wildcards bool) bool {
 	for k, v := range registered {
-		if gv, ok := got[k]; !ok || gv != v {
+		gv, ok := got[k]
+		if !ok {
+			return false
+		}
+		if wildcards && strings.Contains(v, "*") {
+			if !wildcardMatch(v, gv) {
+				return false
+			}
+		} else if gv != v {
 			return false
 		}
 	}
 	return true
+}
+
+// wildcardMatch reports whether value matches pattern, in which each "*"
+// matches any run of characters, including none.
+func wildcardMatch(pattern, value string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == value
+	}
+	if !strings.HasPrefix(value, parts[0]) {
+		return false
+	}
+	value = value[len(parts[0]):]
+	last := parts[len(parts)-1]
+	for _, part := range parts[1 : len(parts)-1] {
+		i := strings.Index(value, part)
+		if i < 0 {
+			return false
+		}
+		value = value[i+len(part):]
+	}
+	return strings.HasSuffix(value, last)
 }
 
 // parsedCommand holds a single local-syntax command and its arguments.

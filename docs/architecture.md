@@ -220,9 +220,13 @@ prefix matching. Conditions that are not `<name> = <value>` are ignored.
 
 A `type: command` entry matches when its `command` equals the command name and every
 `args` pair appears among the arguments (order-insensitive; extra arguments are
-ignored). The entry with the most args wins, so an entry without args is the
-fallback; the first registered breaks a tie. This uses the same `findMostSpecific`
-as publish-data matching.
+ignored). A `*` in an args value matches any run of characters (`wildcardMatch`);
+`"*"` alone requires the argument with any value. The most specific entry wins,
+ranked by `specificity`: most args, then most exact (non-wildcard) values, then most
+fixed characters in wildcard values. An entry without args is therefore the
+fallback, and the first registered breaks a tie. This uses the same
+`findMostSpecific` as publish-data matching, which has wildcards turned off, so its
+context values compare `*` literally and its ranking is by pair count alone.
 
 ```yaml
 - match:

@@ -141,7 +141,7 @@ mocka.WithCommandMatch(
 )
 ```
 
-This matches `list warehouses where wh_id = 'MHE'`, `list warehouses where wh_id = 'MHE' and bldg_id = 'B1'`, and `list warehouses where bldg_id = 'B1' and wh_id = 'MHE'`.
+This matches `list warehouses where wh_id = 'MHE'`, `list warehouses where wh_id = 'MHE' and bldg_id = 'B1'`, and `list warehouses where bldg_id = 'B1' and wh_id = 'MHE'`. Arg values may use `*` wildcards; see [command wildcards](#command-wildcards).
 
 #### `WithEntries`
 
@@ -404,11 +404,26 @@ For each incoming query, Mocka evaluates registered entries in this order, retur
 1. **Exact** — the normalized query equals a registered `type: exact` entry
 2. **Publish-data contextual** — the query is a `publish data where ... | { ... }` form, and a `type: publish_data` entry matches both the inner command and all of the entry's context key/value pairs; when several match, the one with the most context pairs wins (the first listed breaks a tie)
 3. **Publish-data generic** — same form, but a `type: publish_data` entry with no context matches the inner command alone
-4. **Command** — the query is a single command, `<command> [where <name> = <value> and ...]`, and a `type: command` entry has the same command name and all of its `args` among the arguments, in any order; when several match, the one with the most args wins, and an entry without args is the fallback
+4. **Command** — the query is a single command, `<command> [where <name> = <value> and ...]`, and a `type: command` entry has the same command name and all of its `args` among the arguments, in any order, with `*` wildcards allowed in arg values; when several match, the most specific wins (see [command wildcards](#command-wildcards)), and an entry without args is the fallback
 5. **Prefix** — the normalized query starts with a registered `type: prefix` string; when several prefixes match, the longest wins regardless of file order
 6. **No match** — returns status `501` (command not found)
 
-Command matching compares argument values after normalization, with the quotes around string values removed, so `wh_id = 'MHE'`, `wh_id = "mhe"`, and `args: {wh_id: MHE}` all match. Quoted values may contain `and` or `=`. Conditions other than `<name> = <value>` are ignored. Pipelines (`|`), command blocks, `;`, `&`, SQL, and Groovy are not single commands, so they skip command matching and go on to prefix matching. Use `type: exact` or `type: prefix` for those.
+Command matching compares argument values after normalization, with the quotes around string values removed, so `wh_id = 'MHE'`, `wh_id = "mhe"`, and `args: {wh_id: MHE}` all match.
+
+#### Command wildcards
+
+In `type: command` args, a `*` in a value matches any run of characters, including none:
+
+```yaml
+  - match:
+      type: command
+      command: list orders
+      args:
+        ordnum: "ORD*"     # ORD001, ORD, ORD-9 ...
+        wh_id: "*"         # wh_id must be present, with any value
+```
+
+`*` can appear anywhere (`*-EXP`, `A*Z`). There is no escape for a literal `*`. When several command entries match, the most specific wins: first the entry with the most args, then the one with the most exact (non-wildcard) values, then the one whose wildcard values have the most fixed characters, so `ORD001` beats `ORD0*`, which beats `ORD*`, which beats `*`. The first entry listed breaks any remaining tie. Wildcards apply only to `command` args; `publish_data` context values and other match types compare `*` literally. Quoted values may contain `and` or `=`. Conditions other than `<name> = <value>` are ignored. Pipelines (`|`), command blocks, `;`, `&`, SQL, and Groovy are not single commands, so they skip command matching and go on to prefix matching. Use `type: exact` or `type: prefix` for those.
 
 ---
 

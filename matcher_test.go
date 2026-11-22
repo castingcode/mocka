@@ -368,3 +368,63 @@ func TestMatchQuery_CommandMatch(t *testing.T) {
 		})
 	})
 }
+
+func TestMatchQuery_CommandWildcards(t *testing.T) {
+
+	logger := slog.Default()
+	status := func(query string, entries []Entry) int {
+		return matchQuery(normalizeQuery(query), entries, logger).StatusCode
+	}
+	cmd := func(args map[string]string, status int) Entry {
+		return Entry{MatchType: MatchTypeCommand, Command: "list orders", Args: args, StatusCode: status}
+	}
+
+	Convey("command arg wildcards", t, func() {
+
+		Convey("A * matches any run of characters, including none, anywhere in the value", func() {
+			entries := []Entry{cmd(map[string]string{"ordnum": "ord*"}, 1), cmd(map[string]string{"carcod": "*x"}, 2), cmd(map[string]string{"loc": "a*-*z"}, 3)}
+			So(status("list orders where ordnum = 'ORD001'", entries), ShouldEqual, 1)
+			So(status("list orders where ordnum = 'ord'", entries), ShouldEqual, 1)
+			So(status("list orders where ordnum = 'XORD1'", entries), ShouldEqual, StatusCommandNotFound)
+			So(status("list orders where carcod = 'FEDEX'", entries), ShouldEqual, 2)
+			So(status("list orders where carcod = 'FEDEXX1'", entries), ShouldEqual, StatusCommandNotFound)
+			So(status("list orders where loc = 'A1-B2-Z'", entries), ShouldEqual, 3)
+			So(status("list orders where loc = 'A1Z'", entries), ShouldEqual, StatusCommandNotFound)
+		})
+
+		Convey("A value of * requires the argument with any value", func() {
+			entries := []Entry{cmd(map[string]string{"ordnum": "*"}, 1)}
+			So(status("list orders where ordnum = ''", entries), ShouldEqual, 1)
+			So(status("list orders where ordnum = 'anything'", entries), ShouldEqual, 1)
+			So(status("list orders where wh_id = 'MHE'", entries), ShouldEqual, StatusCommandNotFound)
+		})
+
+		Convey("Exact values beat wildcards, and wildcards with more fixed characters beat shorter ones, in any order", func() {
+			entries := []Entry{
+				cmd(map[string]string{"ordnum": "*"}, 1),
+				cmd(map[string]string{"ordnum": "ord*"}, 2),
+				cmd(map[string]string{"ordnum": "ord0*"}, 3),
+				cmd(map[string]string{"ordnum": "ord001"}, 4),
+			}
+			So(status("list orders where ordnum = 'ORD001'", entries), ShouldEqual, 4)
+			So(status("list orders where ordnum = 'ORD002'", entries), ShouldEqual, 3)
+			So(status("list orders where ordnum = 'ORD9'", entries), ShouldEqual, 2)
+			So(status("list orders where ordnum = 'X'", entries), ShouldEqual, 1)
+		})
+
+		Convey("More args still beat fewer, even when the extra args are wildcards", func() {
+			entries := []Entry{
+				cmd(map[string]string{"ordnum": "ord001"}, 1),
+				cmd(map[string]string{"ordnum": "ord*", "wh_id": "*"}, 2),
+			}
+			So(status("list orders where wh_id = 'MHE' and ordnum = 'ORD001'", entries), ShouldEqual, 2)
+			So(status("list orders where ordnum = 'ORD001'", entries), ShouldEqual, 1)
+		})
+
+		Convey("publish_data context values do not treat * as a wildcard", func() {
+			entries := []Entry{{MatchType: MatchTypePublishData, Inner: "do thing", Context: map[string]string{"wh_id": "m*"}, StatusCode: 1}}
+			So(status("publish data where wh_id = 'MHE' | { do thing }", entries), ShouldEqual, StatusCommandNotFound)
+			So(status("publish data where wh_id = 'm*' | { do thing }", entries), ShouldEqual, 1)
+		})
+	})
+}
