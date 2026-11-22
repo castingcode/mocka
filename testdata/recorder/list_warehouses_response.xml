@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<moca-response>
+    <session-id></session-id>
+    <status>0</status>
+    <moca-results>
+        <metadata>
+            <column name="wh_id" type="S" length="32" nullable="false"/>
+            <column name="adr_id" type="S" length="20" nullable="false"/>
+            <column name="def_wh_flg" type="I" length="4" nullable="true"/>
+            <column name="moddte" type="D" length="14" nullable="true"/>
+        </metadata>
+        <data>
+            <row>
+                <field>WMD1</field>
+                <field>A0001</field>
+                <field>1</field>
+                <field>20260101120000</field>
+            </row>
+            <row>
+                <field>WMD2</field>
+                <field>A0002</field>
+                <field null="true"></field>
+                <field null="true"></field>
+            </row>
+        </data>
+    </moca-results>
+</moca-response>

@@ -48,7 +48,7 @@ func (u *fakeUpstream) set(query, body string) {
 
 func readSample(t *testing.T, name string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("samples", name))
+	b, err := os.ReadFile(filepath.Join("testdata", "recorder", name))
 	if err != nil {
 		t.Fatal(err)
 	}

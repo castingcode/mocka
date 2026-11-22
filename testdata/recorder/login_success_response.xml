@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<moca-response>
+    <session-id></session-id>
+    <status>0</status>
+    <moca-results>
+        <metadata>
+            <column name="usr_id" type="S" length="0" nullable="true"/>
+            <column name="locale_id" type="S" length="0" nullable="true"/>
+            <column name="addon_id" type="S" length="0" nullable="true"/>
+            <column name="cust_lvl" type="I" length="0" nullable="true"/>
+            <column name="session_key" type="S" length="0" nullable="true"/>
+        </metadata>
+        <data>
+            <row>
+                <field>SUPER</field>
+                <field>US_ENGLISH</field>
+                <field>WM</field>
+                <field>10</field>
+                <field>upstream-session-key</field>
+            </row>
+        </data>
+    </moca-results>
+</moca-response>
