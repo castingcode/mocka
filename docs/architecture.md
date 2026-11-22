@@ -34,6 +34,7 @@ by file rather than by sub-package:
 | `response_loader_inmemory_adapter.go` | `InMemoryResponseLoader` and its option functions |
 | `response_loader_yaml_file_adapter.go` | `FileResponseLoader` — loads responses from YAML + XML or CSV files on disk |
 | `results_csv.go` | Converts CSV result files to `<moca-results>` XML (`csvResultSet`) |
+| `recorder.go` | `RecordingHandler` — proxies to a real MOCA server and records responses as response files |
 
 This keeps the consumer import surface simple: `import "github.com/castingcode/mocka"`.
 
@@ -100,6 +101,29 @@ reloads. It clones what the loader returns, so runtime changes never write into 
 loader's own slice. Runtime entries are not persisted: a reload or restart returns
 to what the loader provides. File and runtime entries share validation through
 `matchEntry`, and duplicates are detected with the same match key the file loader uses.
+
+## Record Mode
+
+`RecordingHandler` implements `MocaRequestHandlerInterface`, so `RegisterRoutes`
+serves it at `POST /service` (`mockasrv -record <url>`). It forwards every request
+body to the upstream MOCA service URL and writes the upstream response back
+unchanged, so login, sessions, and errors are the real server's; mocka's session
+store is not involved.
+
+After a successful forward of an `application/moca-xml` request, it records the
+pair unless the query is a built-in command, the status is 523 or 501, or an exact
+entry for the normalized query already exists outside its own file. It writes:
+
+- `responses.d/recorded.yml`: one exact entry per normalized query, rewritten in
+  full on each recording (through a temporary file and rename)
+- `recorded/<slug>-<hash>.xml`: the `<moca-results>` of responses that have columns
+- `recorded/queries/<slug>-<hash>.txt`: queries containing line breaks
+
+The slug is the start of the normalized query and the hash covers all of it, so
+re-recording a query reuses its file names; files the new recording no longer
+needs are removed. The handler loads the folder at construction, both to fail
+fast on invalid files and to learn the existing exact queries and earlier
+recordings. A mutex serializes recordings.
 
 ## Response Loaders
 

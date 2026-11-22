@@ -197,6 +197,7 @@ docker run -p 4500:4500 -v ./responses:/responses castingcode/mocka
 |---|---|---|
 | `-port` | `4500` | Port to listen on |
 | `-folder` | `./responses` next to the binary | Directory containing `responses.yml` |
+| `-record` | — | Record mode: forward every request to this MOCA service URL (for example `https://moca.example.com/service`) and save the responses under `-folder`. See [Recording responses](#recording-responses). |
 | `-validate` | `false` | Load and validate the response files, then exit (status 1 on error) without serving. Useful in CI. |
 
 ### Directory layout
@@ -225,6 +226,33 @@ Response files are validated when the server starts, and any problem stops it wi
 - duplicate entries — the same exact query, prefix, or publish_data inner and context — within or across files
 
 Run `mockasrv -validate -folder ./responses` to check the files without starting the server. If no response files are found, the server still starts and logs a warning.
+
+### Recording responses
+
+Instead of writing response files by hand, record them from a real MOCA server. Run `mockasrv` in record mode in front of the server and point your client at `mockasrv`:
+
+```sh
+mockasrv -folder ./responses -record https://moca.example.com/service
+```
+
+Every request, including login, goes to the real server, and the client gets its response unchanged, so the client works exactly as it does against the real server. For each command other than `ping`, `login user`, and `logout user`, Mocka saves the response:
+
+```
+responses/
+  responses.d/recorded.yml                                 # one exact entry per recorded query
+  recorded/list-warehouses-where-wh-id-mhe-461d97ad.xml    # its result set
+  recorded/queries/select-wh-id-from-wh-mst-1f0c2a9b.txt   # queries that span several lines
+```
+
+Afterwards, run `mockasrv -folder ./responses` without `-record` to serve the recordings. Because they are in `responses.d/`, your own `responses.yml` is never changed; edit, move, or delete the recorded entries like any others.
+
+- Recording the same query again (after normalization) replaces its entry and files.
+- Recording into a folder that already has `responses.d/recorded.yml` adds to it.
+- Queries that already have an exact entry in your other response files are forwarded but not recorded, so the folder keeps loading.
+- Responses with status `523` (invalid session) or `501` (command not found) are not recorded.
+- If the real server cannot be reached, the client gets HTTP `502`.
+
+The admin API is not available in record mode. Go code can record the same way with `mocka.NewRecordingHandler(upstreamURL, folder)` and `mocka.RegisterRoutes`.
 
 ### responses.yml schema
 

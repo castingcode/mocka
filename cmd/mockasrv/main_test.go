@@ -137,7 +137,7 @@ func Test_dataFolder(t *testing.T) {
 func Test_buildMux(t *testing.T) {
 	t.Run("valid folder", func(t *testing.T) {
 		tempDir := t.TempDir()
-		_, responsesPath, err := buildMux(&tempDir)
+		_, responsesPath, err := buildMux(&tempDir, "")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -148,7 +148,7 @@ func Test_buildMux(t *testing.T) {
 
 	t.Run("invalid folder", func(t *testing.T) {
 		folderFlag := "/non/existent/folder"
-		_, _, err := buildMux(&folderFlag)
+		_, _, err := buildMux(&folderFlag, "")
 		if err == nil {
 			t.Fatalf("expected error, got nil")
 		}
@@ -159,7 +159,7 @@ func Test_buildMux(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(tempDir, "responses.yml"), []byte("responses:\n  - [unclosed"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		_, _, err := buildMux(&tempDir)
+		_, _, err := buildMux(&tempDir, "")
 		if err == nil {
 			t.Fatalf("expected error, got nil")
 		}

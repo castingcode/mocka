@@ -20,6 +20,7 @@ func main() {
 	logFormat := flag.String("log-format", "text", "Log format: text or json")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, or error")
 	validate := flag.Bool("validate", false, "Load and validate the response files, then exit without serving")
+	record := flag.String("record", "", "Record mode: forward every request to this MOCA service URL (such as https://moca.example.com/service) and save the responses under -folder")
 	flag.Parse()
 
 	logger, err := newLogger(*logFormat, *logLevel, os.Stdout)
@@ -29,7 +30,7 @@ func main() {
 	}
 	slog.SetDefault(logger)
 
-	mux, responsesPath, err := buildMux(folder)
+	mux, responsesPath, err := buildMux(folder, *record)
 	if err != nil {
 		logger.Error("failed to start server", "error", err)
 		os.Exit(1)
@@ -46,7 +47,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("mocka server listening", "addr", listener.Addr().String(), "responses", responsesPath)
+	if *record != "" {
+		logger.Info("mocka recording", "addr", listener.Addr().String(), "upstream", *record, "responses", responsesPath)
+	} else {
+		logger.Info("mocka server listening", "addr", listener.Addr().String(), "responses", responsesPath)
+	}
 
 	if err := http.Serve(listener, mux); err != nil {
 		logger.Error("server stopped", "error", err)
@@ -90,10 +95,22 @@ func parseLogLevel(level string) (slog.Level, error) {
 	}
 }
 
-func buildMux(folder *string) (*http.ServeMux, string, error) {
+// buildMux serves canned responses from the responses folder, or, when
+// recordFrom is set, forwards requests to that MOCA service URL and records
+// the responses into the folder.
+func buildMux(folder *string, recordFrom string) (*http.ServeMux, string, error) {
 	f, err := dataFolder(folder)
 	if err != nil {
 		return nil, "", err
+	}
+	if recordFrom != "" {
+		recorder, err := mocka.NewRecordingHandler(recordFrom, f)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to create recording handler: %w", err)
+		}
+		mux := http.NewServeMux()
+		mocka.RegisterRoutes(mux, recorder)
+		return mux, f, nil
 	}
 	lookup, err := mocka.NewResponseLookup(mocka.NewFileResponseLoader(f))
 	if err != nil {
