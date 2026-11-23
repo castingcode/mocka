@@ -328,7 +328,7 @@ func TestFileResponseLoader_MultipleFiles(t *testing.T) {
 
 			Convey("Then a duplicate error names both locations", func() {
 				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldContainSubstring, filepath.Join("responses.d", "more.yml"))
+				So(err.Error(), ShouldContainSubstring, "loading responses.d/more.yml: entry 1: duplicate")
 				So(err.Error(), ShouldContainSubstring, "first defined in responses.yml entry 1")
 			})
 		})

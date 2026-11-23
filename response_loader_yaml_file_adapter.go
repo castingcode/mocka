@@ -79,7 +79,7 @@ func (l *FileResponseLoader) Load() ([]Entry, error) {
 }
 
 // responseFiles returns the response file paths to load, relative to the data
-// folder.
+// folder and separated with "/".
 func (l *FileResponseLoader) responseFiles() ([]string, error) {
 	var files []string
 	for _, name := range []string{"responses.yml", "responses.yaml"} {
@@ -100,7 +100,9 @@ func (l *FileResponseLoader) responseFiles() ([]string, error) {
 			return nil, fmt.Errorf("listing responses.d: %w", err)
 		}
 		for _, m := range matches {
-			extra = append(extra, filepath.Join("responses.d", filepath.Base(m)))
+			// Use "/" on every OS: the name becomes part of each entry's
+			// Source, which the UI and record mode compare against.
+			extra = append(extra, "responses.d/"+filepath.Base(m))
 		}
 	}
 	slices.Sort(extra)
