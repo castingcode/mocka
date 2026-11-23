@@ -2,22 +2,15 @@ package mocka
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/castingcode/mocaprotocol"
-	"github.com/goccy/go-yaml"
 )
 
 const (
@@ -45,8 +38,7 @@ type RecordingHandler struct {
 	logger   *slog.Logger
 
 	mu       sync.Mutex
-	recorded []rawEntry      // recordedFile entries, in order
-	index    map[string]int  // normalized query -> index in recorded
+	file     *managedFile
 	existing map[string]bool // normalized exact queries defined outside recordedFile
 }
 
@@ -62,7 +54,6 @@ func NewRecordingHandler(upstream, folder string) (*RecordingHandler, error) {
 		folder:   folder,
 		client:   &http.Client{},
 		logger:   slog.Default(),
-		index:    make(map[string]int),
 		existing: make(map[string]bool),
 	}
 	entries, err := NewFileResponseLoader(folder).Load()
@@ -74,38 +65,11 @@ func NewRecordingHandler(upstream, folder string) (*RecordingHandler, error) {
 			h.existing[e.Query] = true
 		}
 	}
-	if err := h.loadRecorded(); err != nil {
-		return nil, fmt.Errorf("loading %s: %w", recordedFile, err)
+	header := "# Recorded by mocka from " + upstream + ". Recording the same query again replaces its entry.\n"
+	if h.file, err = loadManagedFile(folder, recordedFile, recordedDir, header); err != nil {
+		return nil, fmt.Errorf("loading earlier recordings: %w", err)
 	}
 	return h, nil
-}
-
-// loadRecorded reads earlier recordings so new ones are added to them.
-func (h *RecordingHandler) loadRecorded() error {
-	data, err := os.ReadFile(filepath.Join(h.folder, recordedFile))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("reading file: %w", err)
-	}
-	var f responseFile
-	if err := yaml.Unmarshal(data, &f); err != nil {
-		return fmt.Errorf("parsing file: %w", err)
-	}
-	for _, r := range f.Responses {
-		query := r.Match.Query
-		if r.Match.QueryFile != "" {
-			raw, err := os.ReadFile(filepath.Join(h.folder, r.Match.QueryFile))
-			if err != nil {
-				return fmt.Errorf("reading query_file %s: %w", r.Match.QueryFile, err)
-			}
-			query = string(raw)
-		}
-		h.index[normalizeQuery(query)] = len(h.recorded)
-		h.recorded = append(h.recorded, r)
-	}
-	return nil
 }
 
 // HandleMocaRequest forwards the request to the upstream server, writes its
@@ -176,18 +140,11 @@ func (h *RecordingHandler) record(reqBody, respBody []byte) error {
 		return nil
 	}
 
-	name := recordingName(normalized)
 	entry := rawEntry{
 		Match:    matchSpec{Type: string(MatchTypeExact), Query: query},
 		RespSpec: responseSpec{Status: response.Status, Message: response.Message},
 	}
-	if strings.Contains(query, "\n") {
-		entry.Match.Query = ""
-		entry.Match.QueryFile = recordedDir + "/queries/" + name + ".txt"
-		if err := h.writeFile(entry.Match.QueryFile, []byte(query+"\n")); err != nil {
-			return err
-		}
-	}
+	var results string
 	if len(response.MocaResults.Metadata.Columns) > 0 {
 		out, err := xml.MarshalIndent(struct {
 			XMLName xml.Name `xml:"moca-results"`
@@ -196,70 +153,11 @@ func (h *RecordingHandler) record(reqBody, respBody []byte) error {
 		if err != nil {
 			return fmt.Errorf("encoding results for %q: %w", normalized, err)
 		}
-		entry.RespSpec.Results = recordedDir + "/" + name + ".xml"
-		if err := h.writeFile(entry.RespSpec.Results, append(out, '\n')); err != nil {
-			return err
-		}
+		results = string(out)
 	}
-
-	if i, ok := h.index[normalized]; ok {
-		// Remove files the earlier recording used that this one does not.
-		old := h.recorded[i]
-		for _, f := range []string{old.Match.QueryFile, old.RespSpec.Results} {
-			if f != "" && f != entry.Match.QueryFile && f != entry.RespSpec.Results {
-				if err := os.Remove(filepath.Join(h.folder, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
-					return fmt.Errorf("removing %s: %w", f, err)
-				}
-			}
-		}
-		h.recorded[i] = entry
-	} else {
-		h.index[normalized] = len(h.recorded)
-		h.recorded = append(h.recorded, entry)
+	if err := h.file.put(entry, results); err != nil {
+		return fmt.Errorf("saving recording of %q: %w", normalized, err)
 	}
-	data, err := yaml.Marshal(responseFile{Responses: h.recorded})
-	if err != nil {
-		return fmt.Errorf("encoding %s: %w", recordedFile, err)
-	}
-	header := "# Recorded by mocka from " + h.upstream + ". Recording the same query again replaces its entry.\n"
-	if err := h.writeFile(recordedFile, append([]byte(header), data...)); err != nil {
-		return err
-	}
-	h.logger.Info("recorded response", "query", normalized, "status", response.Status, "results", entry.RespSpec.Results)
+	h.logger.Info("recorded response", "query", normalized, "status", response.Status)
 	return nil
-}
-
-// writeFile writes data to name, relative to the responses folder, through a
-// temporary file so a reader never sees a partial file.
-func (h *RecordingHandler) writeFile(name string, data []byte) error {
-	path := filepath.Join(h.folder, name)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("creating folder for %s: %w", name, err)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", name, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("replacing %s: %w", name, err)
-	}
-	return nil
-}
-
-var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
-
-// recordingName returns a file name for a normalized query: a readable slug of
-// its start plus a hash of the whole query, so different queries never share
-// a file and recording the same query again reuses its files.
-func recordingName(normalized string) string {
-	slug := strings.Trim(nonSlug.ReplaceAllString(normalized, "-"), "-")
-	if len(slug) > 40 {
-		slug = strings.TrimRight(slug[:40], "-")
-	}
-	sum := sha256.Sum256([]byte(normalized))
-	hash := hex.EncodeToString(sum[:4])
-	if slug == "" {
-		return hash
-	}
-	return slug + "-" + hash
 }
