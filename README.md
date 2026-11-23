@@ -515,6 +515,36 @@ for _, rec := range handler.Requests() {
 
 ---
 
+## Web UI
+
+`mockasrv` serves a web UI at **http://localhost:4500/_mocka/ui/** (the startup log prints the URL). It needs no setup, no session, and no internet access: the pages, the stylesheet, and [htmx](https://htmx.org) 2.0.11 are embedded in the binary.
+
+- **Responses** lists every response in match order, with its source file, and lets you add, delete, and reload them. The add form shows the fields of the selected match type: exact, command (with `*` wildcards in args), publish_data, or prefix. Results are `<moca-results>` XML.
+- **Test a query** shows how a query is normalized, which response it gets and why, and the result set as a table.
+- **Requests** shows the MOCA requests mocka receives, refreshing every 2 seconds. Each unmatched request has a **Create response** button that opens the add form filled in with its query.
+
+Responses you add in the UI are **saved to `responses.d/ui.yml`** in the responses folder, with their result XML in its `ui/` folder, so they are kept across reloads and restarts and can be committed with the rest of your responses. Adding a response with the same match as one in `ui.yml` replaces it, and deleting a `ui.yml` response removes it from the file. The UI never edits your other files: adding a response whose match is already defined in one of them is refused, and deleting one of their responses only removes it until the next reload. **Reload files** re-reads all files and, like `POST /_mocka/reload`, drops responses added through the admin API.
+
+In Go, serve the UI next to the other routes. Pass the responses folder to save edits there, or `""` to keep them only until the next reload:
+
+```go
+handler := mocka.NewMocaRequestHandler(lookup)
+ui, err := mocka.NewUIHandler(handler, "./responses")
+if err != nil {
+    t.Fatal(err)
+}
+mocka.RegisterRoutes(mux, handler)
+mocka.RegisterUIRoutes(mux, ui)
+```
+
+The UI's browser tests are in [`e2e/`](e2e/) and run in CI. To run them locally (they build `mockasrv` and use a temporary copy of the Postman example responses):
+
+```sh
+cd e2e && npm ci && npx playwright install chromium && npx playwright test
+```
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please open an issue or submit a pull request on [GitHub](https://github.com/castingcode/mocka).

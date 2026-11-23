@@ -15,6 +15,8 @@ preferred over robustness, concurrency safety, and security hardening.
 ```
 mocka/            # All library code — package mocka
   cmd/mockasrv/   # Binary wrapper — package main
+  ui/             # UI templates and static files, embedded with go:embed (not a Go package)
+  e2e/            # Playwright browser tests for the UI (Node project, outside the Go module)
 ```
 
 All library code lives in the root `mocka` package. Internal concerns are separated
@@ -34,6 +36,8 @@ by file rather than by sub-package:
 | `response_loader_inmemory_adapter.go` | `InMemoryResponseLoader` and its option functions |
 | `response_loader_yaml_file_adapter.go` | `FileResponseLoader` — loads responses from YAML + XML or CSV files on disk |
 | `results_csv.go` | Converts CSV result files to `<moca-results>` XML (`csvResultSet`) |
+| `ui_handler.go` | `UIHandler` — the web UI under `/_mocka/ui/` and `RegisterUIRoutes` |
+| `managed_file.go` | `managedFile` — response files mocka writes itself (`recorded.yml`, `ui.yml`) |
 | `recorder.go` | `RecordingHandler` — proxies to a real MOCA server and records responses as response files |
 
 This keeps the consumer import surface simple: `import "github.com/castingcode/mocka"`.
@@ -101,6 +105,33 @@ reloads. It clones what the loader returns, so runtime changes never write into 
 loader's own slice. Runtime entries are not persisted: a reload or restart returns
 to what the loader provides. File and runtime entries share validation through
 `matchEntry`, and duplicates are detected with the same match key the file loader uses.
+
+## Web UI
+
+`UIHandler` is an `http.Handler` with its own `ServeMux`, mounted at `/_mocka/ui/` by
+`RegisterUIRoutes`. Pages are rendered server-side with `html/template` from
+`ui/templates` (a layout plus one file per page), and `ui/static` holds the
+stylesheet and a vendored htmx 2.0.11; both are embedded with `//go:embed ui`.
+Every page works as plain links and forms with POST-redirect-GET; htmx adds
+`hx-boost` navigation and polls the request table (`GET /_mocka/ui/requests/rows`
+returns only the `<tbody>`). The add form shows only the selected match type's
+fields with CSS `:has()`, so it needs no JavaScript. Validation errors re-render the
+form with status 422, which the page's `htmx-config` tells htmx to swap.
+
+The UI calls the same internals as the admin API: `newEntry` validation,
+`ResponseLookup` and the request log. With a responses folder, adding a response
+writes it to `responses.d/ui.yml` through a `managedFile` (result XML in `ui/`) and
+then reloads the lookup with `reload(true)`, which re-applies runtime entries with
+their ids, so UI edits do not drop admin API entries. A runtime entry with the same
+match is removed first, so the saved one is not hidden. The UI refuses a match that
+another file already defines, so `ui.yml` never duplicates it, and deleting an entry
+from another file only removes it from the lookup. Without a folder, UI entries are
+runtime entries. A mutex serializes edits.
+
+`managedFile` is shared with record mode: it keeps a mocka-written response file's
+entries keyed by `duplicateKey`, writes result XML and multi-line queries to files
+named from a slug plus a hash of the key, removes files an entry no longer uses, and
+rewrites the YAML through a temporary file.
 
 ## Record Mode
 

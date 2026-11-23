@@ -1,0 +1,24 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{template "title" .}} · mocka</title>
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <link rel="stylesheet" href="/_mocka/ui/static/style.css">
+  <script src="/_mocka/ui/static/htmx.min.js" defer></script>
+</head>
+<body hx-boost="true">
+  <header>
+    <span class="brand">mocka</span>
+    <nav>
+      <a href="/_mocka/ui/responses"{{if eq .Nav "responses"}} aria-current="page"{{end}}>Responses</a>
+      <a href="/_mocka/ui/test"{{if eq .Nav "test"}} aria-current="page"{{end}}>Test a query</a>
+      <a href="/_mocka/ui/requests"{{if eq .Nav "requests"}} aria-current="page"{{end}}>Requests</a>
+    </nav>
+  </header>
+  <main>
+    {{template "content" .}}
+  </main>
+</body>
+</html>{{end}}

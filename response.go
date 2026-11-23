@@ -41,7 +41,8 @@ type Entry struct {
 	ResultSet  string // pre-loaded XML content
 	Source     string // where the entry is defined, such as "responses.yml entry 2"; empty for in-memory entries
 
-	id int // assigned by ResponseLookup; identifies the entry in the admin API
+	id      int  // assigned by ResponseLookup; identifies the entry in the admin API
+	runtime bool // added at runtime rather than by the loader
 }
 
 // contextual returns the name and key/value pairs an entry matches on, for

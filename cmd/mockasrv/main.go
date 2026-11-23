@@ -50,7 +50,8 @@ func main() {
 	if *record != "" {
 		logger.Info("mocka recording", "addr", listener.Addr().String(), "upstream", *record, "responses", responsesPath)
 	} else {
-		logger.Info("mocka server listening", "addr", listener.Addr().String(), "responses", responsesPath)
+		logger.Info("mocka server listening", "addr", listener.Addr().String(), "responses", responsesPath,
+			"ui", fmt.Sprintf("http://localhost:%d/_mocka/ui/", listener.Addr().(*net.TCPAddr).Port))
 	}
 
 	if err := http.Serve(listener, mux); err != nil {
@@ -121,6 +122,11 @@ func buildMux(folder *string, recordFrom string) (*http.ServeMux, string, error)
 	mux := http.NewServeMux()
 	mocka.RegisterRoutes(mux, handler)
 	mocka.RegisterAdminRoutes(mux, handler)
+	ui, err := mocka.NewUIHandler(handler, f)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create UI: %w", err)
+	}
+	mocka.RegisterUIRoutes(mux, ui)
 
 	return mux, f, nil
 }

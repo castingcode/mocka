@@ -29,6 +29,8 @@ Go version: see `go.mod`.
 ```
 mocka/            # All library code lives here as package mocka
   cmd/mockasrv/   # Binary entry point (thin wrapper only)
+  ui/             # Web UI templates and static files, embedded with go:embed (assets, not a Go package)
+  e2e/            # Playwright browser tests for the web UI (a Node project, outside the Go module)
 ```
 
 Everything except the binary is in the root `mocka` package. Consumers import

@@ -241,20 +241,10 @@ func (h *MocaRequestHandler) HandlePutResponse(w http.ResponseWriter, r *http.Re
 		http.Error(w, fmt.Sprintf("parsing JSON body: %v", err), http.StatusBadRequest)
 		return
 	}
-	e, err := matchEntry(req.Match, nil)
+	e, err := newEntry(req.Match, req.Response)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid match: %v", err), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-	e.StatusCode = req.Response.Status
-	e.Message = req.Response.Message
-	e.ResultSet = strings.TrimSpace(req.Response.Results)
-	if e.ResultSet != "" {
-		var probe mocaprotocol.MocaResponse
-		if err := xml.Unmarshal([]byte(e.ResultSet), &probe.MocaResults); err != nil {
-			http.Error(w, fmt.Sprintf("invalid response.results XML: %v", err), http.StatusBadRequest)
-			return
-		}
 	}
 	e.Source = "admin API"
 
@@ -265,6 +255,36 @@ func (h *MocaRequestHandler) HandlePutResponse(w http.ResponseWriter, r *http.Re
 		status = http.StatusOK
 	}
 	h.writeJSON(w, status, newResponseView(stored))
+}
+
+// newEntry validates a match and a response with inline result XML, as the
+// admin API and the UI receive them, and returns the entry.
+func newEntry(m matchSpec, resp matchResponse) (Entry, error) {
+	e, err := matchEntry(m, nil)
+	if err != nil {
+		return Entry{}, fmt.Errorf("invalid match: %w", err)
+	}
+	e.StatusCode = resp.Status
+	e.Message = resp.Message
+	e.ResultSet = strings.TrimSpace(resp.Results)
+	if e.ResultSet != "" {
+		if _, err := parseResultSet(e.ResultSet); err != nil {
+			return Entry{}, fmt.Errorf("invalid results XML: %w", err)
+		}
+	}
+	return e, nil
+}
+
+// parseResultSet parses a <moca-results> XML fragment.
+func parseResultSet(s string) (mocaprotocol.MocaResults, error) {
+	var probe struct {
+		XMLName xml.Name `xml:"moca-results"`
+		mocaprotocol.MocaResults
+	}
+	if err := xml.Unmarshal([]byte(s), &probe); err != nil {
+		return mocaprotocol.MocaResults{}, err
+	}
+	return probe.MocaResults, nil
 }
 
 // HandleDeleteResponse removes the registered entry with the id in the path.
@@ -286,7 +306,7 @@ func (h *MocaRequestHandler) HandleDeleteResponse(w http.ResponseWriter, r *http
 // files, discarding runtime entries. If loading fails, the current entries
 // are kept and the error is returned.
 func (h *MocaRequestHandler) HandleReload(w http.ResponseWriter, _ *http.Request) {
-	if err := h.lookup.reload(); err != nil {
+	if err := h.lookup.reload(false); err != nil {
 		h.logger.Warn("reloading responses failed; keeping the current responses", "error", err)
 		http.Error(w, fmt.Sprintf("reloading responses: %v; the current responses were kept", err), http.StatusInternalServerError)
 		return

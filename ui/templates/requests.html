@@ -1,0 +1,38 @@
+{{define "title"}}Requests{{end}}
+
+{{define "content"}}
+<h1>Requests</h1>
+<div class="toolbar">
+  <p class="hint">MOCA requests received, newest first. The list refreshes every 2 seconds.</p>
+  <nav class="filter">
+    <a href="/_mocka/ui/requests"{{if not .UnmatchedOnly}} aria-current="page"{{end}}>All</a>
+    <a href="/_mocka/ui/requests?unmatched=1"{{if .UnmatchedOnly}} aria-current="page"{{end}}>Unmatched</a>
+  </nav>
+  <form method="post" action="/_mocka/ui/requests/clear">
+    <button type="submit">Clear</button>
+  </form>
+</div>
+<table class="requests">
+  <thead><tr><th>Time</th><th>Query</th><th>Status</th><th>Handled by</th><th></th></tr></thead>
+  {{template "request_rows" .}}
+</table>
+{{end}}
+
+{{define "request_rows"}}
+<tbody id="request-rows" hx-get="{{.RowsURL}}" hx-trigger="every 2s" hx-swap="outerHTML">
+  {{range .Rows}}
+  <tr{{if .Unmatched}} class="is-unmatched"{{end}}>
+    <td class="detail">{{.Time}}</td>
+    <td><code>{{.Query}}</code></td>
+    <td>{{.Status}}</td>
+    <td>{{if .Unmatched}}<span class="unmatched">{{.Handled}}</span>{{else}}{{.Handled}}{{end}}</td>
+    <td class="actions">
+      <a href="{{.TestURL}}">Test</a>
+      {{if .CreateURL}}<a href="{{.CreateURL}}" class="button">Create response</a>{{end}}
+    </td>
+  </tr>
+  {{else}}
+  <tr><td colspan="5" class="empty">No requests{{if .UnmatchedOnly}} without a response{{end}} yet.</td></tr>
+  {{end}}
+</tbody>
+{{end}}

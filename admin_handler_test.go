@@ -329,7 +329,8 @@ func TestAdmin_Responses(t *testing.T) {
 				{"an unknown match type", `{"match": {"type": "exat", "query": "a"}}`, `unknown match type "exat"`},
 				{"a misspelled field", `{"match": {"type": "exact", "querry": "a"}}`, `unknown field "querry"`},
 				{"a query_file", `{"match": {"type": "exact", "query_file": "q.txt"}}`, "query_file is not supported"},
-				{"results that are not XML", `{"match": {"type": "exact", "query": "a"}, "response": {"results": "<moca-results>"}}`, "invalid response.results XML"},
+				{"results that are not XML", `{"match": {"type": "exact", "query": "a"}, "response": {"results": "<moca-results>"}}`, "invalid results XML"},
+				{"results with another root element", `{"match": {"type": "exact", "query": "a"}, "response": {"results": "<warehouses/>"}}`, "invalid results XML: expected element type <moca-results>"},
 			}
 			for _, c := range cases {
 				w := adminDo(mux, "POST", "/_mocka/responses", c.body)

@@ -1,0 +1,42 @@
+{{define "title"}}Test a query{{end}}
+
+{{define "content"}}
+<h1>Test a query</h1>
+<p class="hint">See which response a query gets, without a session. Case, spacing, and quote style do not matter.</p>
+<form method="get" action="/_mocka/ui/test" class="test">
+  <textarea name="query" aria-label="Query" rows="4" class="mono" placeholder="list warehouses where wh_id = 'MHE'" required>{{.Query}}</textarea>
+  <button type="submit" class="primary">Test</button>
+</form>
+
+{{if .Tested}}
+<section class="result" id="result">
+  <dl>
+    <dt>Normalized</dt><dd><code>{{.Normalized}}</code></dd>
+    <dt>Matched</dt>
+    <dd>
+      {{if .Match}}
+        <span class="matched">{{.Match}}</span>{{if .Detail}} <span class="detail">({{.Detail}})</span>{{end}}
+        {{if .Source}}<div class="detail">Response {{.ID}} · {{.Source}}</div>{{end}}
+      {{else}}
+        <span class="unmatched">No response matches.</span>
+        <a href="{{.CreateURL}}" class="button">Create response</a>
+      {{end}}
+    </dd>
+    {{if not .Builtin}}
+    <dt>Status</dt><dd>{{.Status}}{{if .Message}} · {{.Message}}{{end}}</dd>
+    {{end}}
+  </dl>
+  {{if .Columns}}
+  <div class="scroll">
+    <table class="results">
+      <thead><tr>{{range .Columns}}<th>{{.}}</th>{{end}}</tr></thead>
+      <tbody>
+        {{range .Rows}}<tr>{{range .}}<td>{{if .Null}}<span class="null">null</span>{{else}}{{.Value}}{{end}}</td>{{end}}</tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  <p class="detail">{{len .Rows}} row{{if ne (len .Rows) 1}}s{{end}}</p>
+  {{end}}
+</section>
+{{end}}
+{{end}}

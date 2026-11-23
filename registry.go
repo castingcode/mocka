@@ -23,7 +23,7 @@ type ResponseLookup struct {
 // NewResponseLookup creates a ResponseLookup by loading entries from loader.
 func NewResponseLookup(loader ResponseLoader) (*ResponseLookup, error) {
 	r := &ResponseLookup{loader: loader, logger: slog.Default()}
-	if err := r.reload(); err != nil {
+	if err := r.reload(false); err != nil {
 		return nil, err
 	}
 	if len(r.entries) == 0 {
@@ -53,9 +53,11 @@ func (r *ResponseLookup) resolve(query string) (Response, *Entry) {
 	return resp, &cp
 }
 
-// reload replaces all entries, including runtime ones, with a fresh load from
-// the loader. On error the current entries are kept.
-func (r *ResponseLookup) reload() error {
+// reload replaces the entries with a fresh load from the loader. Runtime
+// entries are dropped, unless keepRuntime is set: then they are applied again
+// on top of the loaded entries, with their ids. On error the current entries
+// are kept.
+func (r *ResponseLookup) reload(keepRuntime bool) error {
 	loaded, err := r.loader.Load()
 	if err != nil {
 		return err
@@ -69,7 +71,15 @@ func (r *ResponseLookup) reload() error {
 		r.nextID++
 		entries[i].id = r.nextID
 	}
+	old := r.entries
 	r.entries = entries
+	if keepRuntime {
+		for _, e := range old {
+			if e.runtime {
+				r.apply(e)
+			}
+		}
+	}
 	return nil
 }
 
@@ -87,15 +97,22 @@ func (r *ResponseLookup) put(e Entry) (Entry, bool) {
 	defer r.mu.Unlock()
 	r.nextID++
 	e.id = r.nextID
+	e.runtime = true
+	return e, r.apply(e)
+}
+
+// apply adds e, or replaces the entry with the same match key in place, and
+// reports whether it replaced one. The caller holds the lock.
+func (r *ResponseLookup) apply(e Entry) bool {
 	key := duplicateKey(e)
 	for i := range r.entries {
 		if duplicateKey(r.entries[i]) == key {
 			r.entries[i] = e
-			return e, true
+			return true
 		}
 	}
 	r.entries = append(r.entries, e)
-	return e, false
+	return false
 }
 
 // remove deletes the entry with the given ID.

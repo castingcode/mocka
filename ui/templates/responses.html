@@ -1,0 +1,84 @@
+{{define "title"}}Responses{{end}}
+
+{{define "content"}}
+<h1>Responses</h1>
+{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+
+<div class="toolbar">
+  <p class="hint">In match order. The first entry that matches a query answers it.</p>
+  <form method="post" action="/_mocka/ui/reload">
+    <button type="submit" title="Re-read the response files. Responses added through the admin API are dropped.">Reload files</button>
+  </form>
+</div>
+
+<table class="entries">
+  <thead>
+    <tr><th>ID</th><th>Type</th><th>Match</th><th>Status</th><th>Results</th><th>Source</th><th></th></tr>
+  </thead>
+  <tbody>
+    {{range .Entries}}
+    <tr id="entry-{{.ID}}">
+      <td>{{.ID}}</td>
+      <td><span class="tag">{{.Type}}</span></td>
+      <td><code>{{.Match}}</code>{{if .Detail}}<div class="detail">{{.Detail}}</div>{{end}}</td>
+      <td>{{.Status}}{{if .Message}}<div class="detail">{{.Message}}</div>{{end}}</td>
+      <td>{{if ge .Rows 0}}{{.Rows}} row{{if ne .Rows 1}}s{{end}}{{else}}—{{end}}</td>
+      <td class="detail">{{.Source}}</td>
+      <td>
+        <form method="post" action="/_mocka/ui/responses/{{.ID}}/delete">
+          <button type="submit" class="danger" title="{{if .Editable}}Delete it from the UI file.{{else}}Remove it until the next reload. The UI does not edit the file it is defined in.{{end}}">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="7" class="empty">No responses yet. Add one below.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+
+<h2 id="add">Add a response</h2>
+<p class="hint">
+  {{if .SavedTo}}Saved to <code>{{.SavedTo}}</code>, so it is kept across reloads and restarts. A response with the same match as one in that file replaces it.
+  {{else}}Not saved to a file: it lasts until the next reload.{{end}}
+</p>
+<form method="post" action="/_mocka/ui/responses" class="add">
+  <label>Match type
+    <select name="type" id="type">
+      <option value="exact"{{if eq .Form.Type "exact"}} selected{{end}}>exact: the whole query</option>
+      <option value="command"{{if eq .Form.Type "command"}} selected{{end}}>command: a command and its arguments</option>
+      <option value="publish_data"{{if eq .Form.Type "publish_data"}} selected{{end}}>publish_data: an inner command and its context</option>
+      <option value="prefix"{{if eq .Form.Type "prefix"}} selected{{end}}>prefix: queries that start with text</option>
+    </select>
+  </label>
+
+  <fieldset data-for="exact">
+    <legend>Exact</legend>
+    <label>Query <textarea name="query" rows="3" placeholder="list warehouses where wh_id = 'MHE'">{{.Form.Query}}</textarea></label>
+  </fieldset>
+  <fieldset data-for="command">
+    <legend>Command</legend>
+    <label>Command <input name="command" value="{{.Form.Command}}" placeholder="list orders"></label>
+    <label><span>Args, one <code>key = value</code> per line; <code>*</code> is a wildcard</span> <textarea name="args" rows="3" placeholder="ordnum = ORD*">{{.Form.Args}}</textarea></label>
+  </fieldset>
+  <fieldset data-for="publish_data">
+    <legend>Publish data</legend>
+    <label>Inner command <input name="inner" value="{{.Form.Inner}}" placeholder="do thing"></label>
+    <label><span>Context, one <code>key = value</code> per line</span> <textarea name="context" rows="3" placeholder="wh_id = MHE">{{.Form.Context}}</textarea></label>
+  </fieldset>
+  <fieldset data-for="prefix">
+    <legend>Prefix</legend>
+    <label>Prefix <input name="prefix" value="{{.Form.Prefix}}" placeholder="list warehouses"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Response</legend>
+    <div class="row">
+      <label class="narrow">Status <input name="status" value="{{.Form.Status}}" inputmode="numeric"></label>
+      <label>Message <input name="message" value="{{.Form.Message}}" placeholder="No Data Found"></label>
+    </div>
+    <label><span>Results, as <code>&lt;moca-results&gt;</code> XML (optional)</span> <textarea name="results" rows="8" class="mono" placeholder="&lt;moca-results&gt;&lt;metadata&gt;…&lt;/metadata&gt;&lt;data&gt;…&lt;/data&gt;&lt;/moca-results&gt;">{{.Form.Results}}</textarea></label>
+  </fieldset>
+  <button type="submit" class="primary">Add response</button>
+</form>
+{{end}}

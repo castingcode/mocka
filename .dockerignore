@@ -12,3 +12,4 @@ coverage.html
 Taskfile.yml
 codecov.yaml
 .goreleaser.yaml
+e2e/
